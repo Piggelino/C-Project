@@ -23,6 +23,7 @@ int main() {
     std::cout << "Camera opened successfully. Press 'q' to quit." << std::endl;
 
     cv::Mat frame;
+    cv::Mat gray, thresh;
 
     while (true) {
         // Grab a frame
@@ -31,11 +32,19 @@ int main() {
             break;
         }
 
-        // Show the frame
+        // Convert to grayscale
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+        // Apply Thresholding
+        cv::threshold(gray, thresh, 80, 255, cv::THRESH_BINARY_INV);
+        // Count black pixels
+        int blackPixels = cv::countNonZero(thresh);
+        std::cout << "Black pixels: " << blackPixels << std::endl;
+        // Show the frames
         cv::imshow("Camera Feed", frame);
+        cv::imshow("Thresholded Image", thresh);
 
         // Exit when user presses 'q'
-        char key = (char)cv::waitKey(1);
+        int key = (int)cv::waitKey(1) & 0xFF;
         if (key == 'q' || key == 'Q') {
             break;
         }
