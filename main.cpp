@@ -36,24 +36,57 @@ int main() {
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
         // Apply Thresholding
         cv::threshold(gray, thresh, 80, 255, cv::THRESH_BINARY_INV);
+
+        // A contour is a line around a connected white area in the threshold image.
         std::vector<std::vector<cv::Point>> contours;
-        cv::findContours(thresh, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-        for(size_t i = 0; i < contours.size(); i++) {
-                cv::drawContours(frame, contours, (int)i, cv::Scalar(0, 255, 0), 2);
+        cv::findContours(
+            thresh,
+            contours,
+            cv::RETR_EXTERNAL,
+            cv::CHAIN_APPROX_SIMPLE
+        );
+
+        // Check every detected shape.
+        for (const std::vector<cv::Point>& contour : contours) {
+            // Ignore very small areas, which are usually camera noise.
+            if (cv::contourArea(contour) < 500) {
+                continue;
+            }
+
+            // This is the simplified version of the original contour.
+            std::vector<cv::Point> approximatedContour;
+
+            // The allowed error is 2% of the contour's perimeter.
+            double epsilon = 0.02 * cv::arcLength(contour, true);
+            cv::approxPolyDP(
+                contour,
+                approximatedContour,
+                epsilon,
+                true
+            );
+
+            // A convex contour has no inward dents. A square is convex.
+            bool isConvex = approximatedContour.size() >= 3 &&
+                            cv::isContourConvex(approximatedContour);
+
+            if (isConvex) {
+                // Draw the simplified convex shape in green.
+                std::vector<std::vector<cv::Point>> shape{
+                    approximatedContour
+                };
+                cv::drawContours(
+                    frame,
+                    shape,
+                    0,
+                    cv::Scalar(0, 255, 0),
+                    3
+                );
+            }
         }
-        for (let i = 0; i < contours.size(); ++i) {
-            let tmp = new cv.Mat();
-            let cnt = contours.get(i);
-            // You can try more different parameters
-            cv.approxPolyDP(cnt, tmp, 3, true);
-            poly.push_back(tmp);
-            cnt.delete(); tmp.delete();
-        }
-        // Count black pixels
-       // int blackPixels = cv::countNonZero(thresh);
-        //std::cout << "Black pixels: " << blackPixels << std::endl;
-        // Show the frames
+
+        // Show the original camera image, grayscale image, and threshold image.
         cv::imshow("Camera Feed", frame);
+        cv::imshow("Grayscale", gray);
         cv::imshow("Thresholded Image", thresh);
 
         // Exit when user presses 'q'
