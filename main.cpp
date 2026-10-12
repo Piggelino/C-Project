@@ -1,11 +1,50 @@
 #include <iostream>
+#include <cstdlib> 
+#include <string> 
+#include <vector>
 
 #if __has_include(<opencv2/opencv.hpp>)
 #include <opencv2/opencv.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/geometry.hpp>
 #define OPENCV_AVAILABLE 1
 #else
 #define OPENCV_AVAILABLE 0
 #endif
+
+class AudioSource {
+private:
+    std::string filePath;
+public:
+    AudioSource(std::string path) {
+        filePath = path;
+    }
+    std::string getFilePath() {
+        return filePath;
+    }
+};
+
+class AudioOutput {
+private:
+    bool isPlaying;
+public:
+    AudioOutput() {
+        isPlaying = false;
+    }
+    void play(AudioSource& source) {
+        if (!isPlaying) {
+            std::string command = "afplay " + source.getFilePath() + " &";
+            system(command.c_str());
+            isPlaying = true;
+            std::cout << "Spelar ljud: " << source.getFilePath() << std::endl;
+        }
+    }
+    void resetDetection() {
+        isPlaying = false;
+    }
+};
+
+
 
 int main() {
 #if !OPENCV_AVAILABLE
@@ -24,6 +63,9 @@ int main() {
 
     cv::Mat frame;
     cv::Mat gray, thresh;
+
+    AudioSource mySource("pipNoise.mp3");
+    AudioOutput mySpeaker;
 
     while (true) {
         // Grab a frame
@@ -45,6 +87,8 @@ int main() {
             cv::RETR_EXTERNAL,
             cv::CHAIN_APPROX_SIMPLE
         );
+
+        bool markerDetected = false;
 
         // Check every detected shape.
         for (const std::vector<cv::Point>& contour : contours) {
@@ -70,6 +114,7 @@ int main() {
                             cv::isContourConvex(approximatedContour);
 
             if (isConvex) {
+                markerDetected = true;
                 // Draw the simplified convex shape in green.
                 std::vector<std::vector<cv::Point>> shape{
                     approximatedContour
@@ -82,6 +127,12 @@ int main() {
                     3
                 );
             }
+        }
+
+        if (markerDetected) {
+            mySpeaker.play(mySource);
+        } else {
+            mySpeaker.resetDetection();
         }
 
         // Show the original camera image, grayscale image, and threshold image.
