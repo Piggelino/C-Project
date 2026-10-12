@@ -1,3 +1,5 @@
+#include <vector>
+#include "DistanceEstimator.hpp"
 #include <iostream>
 #include <cstdlib> 
 #include <string> 
@@ -66,6 +68,7 @@ int main() {
 
     AudioSource mySource("pipNoise.mp3");
     AudioOutput mySpeaker;
+    DistanceEstimator distanceEstimator;
 
     while (true) {
         // Grab a frame
@@ -109,16 +112,35 @@ int main() {
                 true
             );
 
-            // A convex contour has no inward dents. A square is convex.
-            bool isConvex = approximatedContour.size() >= 3 &&
-                            cv::isContourConvex(approximatedContour);
+            
+            // A square marker candidate should have four corners
+            // and be convex.
+            bool isSquareCandidate =
+                approximatedContour.size() == 4 &&
+                cv::isContourConvex(approximatedContour);
 
-            if (isConvex) {
+            if (isSquareCandidate) {
+
+                // Measure the area inside the detected contour
+                // in square pixels.
+                double markerArea =
+                    cv::contourArea(approximatedContour);
+
+                // Estimate how close the marker is.
+                double proximity =
+                    distanceEstimator.estimateProximity(markerArea);
+
+                // Convert the proximity into a category.
+                const char* category =
+                    distanceEstimator.getCategory(proximity);
+
                 markerDetected = true;
-                // Draw the simplified convex shape in green.
+
+                // Draw the detected shape in green.
                 std::vector<std::vector<cv::Point>> shape{
                     approximatedContour
                 };
+
                 cv::drawContours(
                     frame,
                     shape,
@@ -126,7 +148,38 @@ int main() {
                     cv::Scalar(0, 255, 0),
                     3
                 );
+
+                // Create text showing the proximity percentage.
+                std::string label =
+                    std::string(category) + " | " +
+                    std::to_string(
+                    static_cast<int>(proximity * 100)
+                    ) + "% | Area: " +
+                    std::to_string(
+                        static_cast<int>(markerArea)
+                    ) + " px2";
+
+                // Position text above the detected shape.
+                cv::Rect box =
+                    cv::boundingRect(approximatedContour);
+
+                cv::Point textPosition(
+                    box.x,
+                    std::max(25, box.y - 10)
+                );
+
+                // Display the measurement on the camera feed.
+                cv::putText(
+                    frame,
+                    label,
+                    textPosition,
+                    cv::FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    cv::Scalar(0, 255, 0),
+                    2
+                );
             }
+
         }
 
         if (markerDetected) {
