@@ -1,11 +1,50 @@
 #include <iostream>
+#include <cstdlib> 
+#include <string> 
+#include <vector>
 
 #if __has_include(<opencv2/opencv.hpp>)
 #include <opencv2/opencv.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/geometry.hpp>
 #define OPENCV_AVAILABLE 1
 #else
 #define OPENCV_AVAILABLE 0
 #endif
+
+class AudioSource {
+private:
+    std::string filePath;
+public:
+    AudioSource(std::string path) {
+        filePath = path;
+    }
+    std::string getFilePath() {
+        return filePath;
+    }
+};
+
+class AudioOutput {
+private:
+    bool isPlaying;
+public:
+    AudioOutput() {
+        isPlaying = false;
+    }
+    void play(AudioSource& source) {
+        if (!isPlaying) {
+            std::string command = "afplay " + source.getFilePath() + " &";
+            system(command.c_str());
+            isPlaying = true;
+            std::cout << "Spelar ljud: " << source.getFilePath() << std::endl;
+        }
+    }
+    void resetDetection() {
+        isPlaying = false;
+    }
+};
+
+
 
 int main() {
 #if !OPENCV_AVAILABLE
@@ -25,6 +64,9 @@ int main() {
     cv::Mat frame;
     cv::Mat gray, thresh;
 
+    AudioSource mySource("pipNoise.mp3");
+    AudioOutput mySpeaker;
+
     while (true) {
         // Grab a frame
         if (!cap.read(frame)) {
@@ -36,11 +78,66 @@ int main() {
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
         // Apply Thresholding
         cv::threshold(gray, thresh, 80, 255, cv::THRESH_BINARY_INV);
-        // Count black pixels
-        int blackPixels = cv::countNonZero(thresh);
-        std::cout << "Black pixels: " << blackPixels << std::endl;
-        // Show the frames
+
+        // A contour is a line around a connected white area in the threshold image.
+        std::vector<std::vector<cv::Point>> contours;
+        cv::findContours(
+            thresh,
+            contours,
+            cv::RETR_EXTERNAL,
+            cv::CHAIN_APPROX_SIMPLE
+        );
+
+        bool markerDetected = false;
+
+        // Check every detected shape.
+        for (const std::vector<cv::Point>& contour : contours) {
+            // Ignore very small areas, which are usually camera noise.
+            if (cv::contourArea(contour) < 500) {
+                continue;
+            }
+
+            // This is the simplified version of the original contour.
+            std::vector<cv::Point> approximatedContour;
+
+            // The allowed error is 2% of the contour's perimeter.
+            double epsilon = 0.02 * cv::arcLength(contour, true);
+            cv::approxPolyDP(
+                contour,
+                approximatedContour,
+                epsilon,
+                true
+            );
+
+            // A convex contour has no inward dents. A square is convex.
+            bool isConvex = approximatedContour.size() >= 3 &&
+                            cv::isContourConvex(approximatedContour);
+
+            if (isConvex) {
+                markerDetected = true;
+                // Draw the simplified convex shape in green.
+                std::vector<std::vector<cv::Point>> shape{
+                    approximatedContour
+                };
+                cv::drawContours(
+                    frame,
+                    shape,
+                    0,
+                    cv::Scalar(0, 255, 0),
+                    3
+                );
+            }
+        }
+
+        if (markerDetected) {
+            mySpeaker.play(mySource);
+        } else {
+            mySpeaker.resetDetection();
+        }
+
+        // Show the original camera image, grayscale image, and threshold image.
         cv::imshow("Camera Feed", frame);
+        cv::imshow("Grayscale", gray);
         cv::imshow("Thresholded Image", thresh);
 
         // Exit when user presses 'q'
