@@ -26,25 +26,34 @@ public:
 
 class AudioOutput {
 private:
-    bool isPlaying;
+    int frameCounter;
 public:
     AudioOutput() {
-        isPlaying = false;
+        frameCounter = 0;
     }
-    void play(AudioSource& source) {
-        if (!isPlaying) {
+    void updateFrequency(AudioSource& source, int blackPixels) {
+        frameCounter++;
+        int framesToWait = -1;
+
+        if (blackPixels > 2000){
+            framesToWait = 2;
+        } 
+        else if (blackPixels > 1000){
+            framesToWait = 10;
+        }
+        else if (blackPixels > 500){
+            framesToWait = 30;
+        }
+        else if (blackPixels > 100){
+            framesToWait = 60;
+        }
+        if (framesToWait != -1 && frameCounter >= framesToWait) {
             std::string command = "afplay " + source.getFilePath() + " &";
             system(command.c_str());
-            isPlaying = true;
-            std::cout << "Spelar ljud: " << source.getFilePath() << std::endl;
+            frameCounter = 0;
         }
     }
-    void resetDetection() {
-        isPlaying = false;
-    }
 };
-
-
 
 int main() {
 #if !OPENCV_AVAILABLE
@@ -125,11 +134,15 @@ int main() {
                     0,
                     cv::Scalar(0, 255, 0),
                     3
-                );
+                );//Efter detta måste vi isolera svarta pixlarna i den gröna konturen och räkna antalet svarta pixlar i den gröna konturen.
+                //För att isolera de svarta pixlarna behöver vi hitta kordinaterna för den gröna konturens hörn och sedan skapa en mask som täcker det området. 
+                //Sedan kan vi använda den masken för att räkna antalet svarta pixlar i det området.
+                //Om antalet svarta pixlar är större än ett visst tröskelvärde, ska vi spela upp ljudet omgående i en loop, och om antalet svarta pixlar blöir fler ska vi spela upp ljudet i en snabbare takt. 
+                //Om antalet svarta pixlar minskar ska vi sakta ner ljudet tills det stannar helt.
             }
         }
 
-        if (markerDetected) {
+        if (markerDetected) {//detta kan inte gälla till när vi har implementerat logiken för att räkna svarta pixlar i den gröna konturen.
             mySpeaker.play(mySource);
         } else {
             mySpeaker.resetDetection();
