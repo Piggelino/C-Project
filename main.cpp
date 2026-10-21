@@ -131,9 +131,15 @@ int main() {
     std::vector<cv::Point2f> corners;
     std::vector<cv::Point> displayCorners;
 
+    contours.reserve(50);
+    approximatedContour.reserve(4);
+    corners.reserve(4);
+    displayCorners.reserve(4);
+
     AudioSource mySource("pipNoise.mp3");
     AudioOutput mySpeaker;
     DistanceEstimator distanceEstimator;
+    
 
     while (true) {
         // Grab a frame
