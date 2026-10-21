@@ -6,6 +6,8 @@
 #if __has_include(<opencv2/opencv.hpp>)
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/geometric.hpp>
+
 #define OPENCV_AVAILABLE 1
 #else
 #define OPENCV_AVAILABLE 0
