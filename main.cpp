@@ -6,7 +6,6 @@
 #if __has_include(<opencv2/opencv.hpp>)
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/geometry.hpp>
 #define OPENCV_AVAILABLE 1
 #else
 #define OPENCV_AVAILABLE 0
@@ -103,7 +102,6 @@ bool orderCorners(
 
     return true;
 }
-
 #endif
 
 
@@ -123,8 +121,7 @@ int main() {
     std::cout << "Camera opened successfully. Press 'q' to quit." << std::endl;
 
     cv::Mat frame;
-    cv::Mat gray, thresh, rectified;
-    const cv::Size rectifiedSize(640, 480);
+    cv::Mat gray, thresh;
 
     AudioSource mySource("pipNoise.mp3");
     AudioOutput mySpeaker;
@@ -191,25 +188,15 @@ int main() {
                 criteria
             );
 
-            std::vector<cv::Point2f> destinationCorners = {
-                {0.0f, 0.0f},
-                {static_cast<float>(rectifiedSize.width - 1), 0.0f},
-                {static_cast<float>(rectifiedSize.width - 1),
-                 static_cast<float>(rectifiedSize.height - 1)},
-                {0.0f, static_cast<float>(rectifiedSize.height - 1)}
-            };
-
-            cv::Mat transform = cv::getPerspectiveTransform(
-                corners,
-                destinationCorners
-            );
-
-            cv::warpPerspective(
-                frame,
-                rectified,
-                transform,
-                rectifiedSize
-            );
+            std::cout << "Detected corners:\n";
+            std::cout << "  Top-left:     (" << corners[0].x << ", "
+                 << corners[0].y << ")\n";
+            std::cout << "  Top-right:    (" << corners[1].x << ", "
+                << corners[1].y << ")\n";
+            std::cout << "  Bottom-right: (" << corners[2].x << ", "
+                << corners[2].y << ")\n";
+            std::cout << "  Bottom-left:  (" << corners[3].x << ", "
+                << corners[3].y << ")\n";
 
             markerDetected = true;
 
@@ -239,9 +226,7 @@ int main() {
         cv::imshow("Camera Feed", frame);
         cv::imshow("Grayscale", gray);
         cv::imshow("Thresholded Image", thresh);
-        if (markerDetected) {
-            cv::imshow("Rectified", rectified);
-        }
+
 
         // Exit when user presses 'q'
         int key = (int)cv::waitKey(1) & 0xFF;
