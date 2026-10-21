@@ -44,6 +44,67 @@ public:
     }
 };
 
+#if OPENCV_AVAILABLE
+bool orderCorners(
+    const std::vector<cv::Point>& points,
+    std::vector<cv::Point2f>& ordered
+) {
+    if (points.size() != 4) {
+        return false;
+    }
+
+    ordered.clear();
+    ordered.reserve(4);
+
+    int topLeft = 0;
+    int topRight = 0;
+    int bottomRight = 0;
+    int bottomLeft = 0;
+
+    float smallestSum = 0.0f;
+    float largestSum = 0.0f;
+    float smallestDifference = 0.0f;
+    float largestDifference = 0.0f;
+
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        float sum = static_cast<float>(points[i].x + points[i].y);
+        float difference = static_cast<float>(points[i].x - points[i].y);
+
+        if (i == 0 || sum < smallestSum) {
+            smallestSum = sum;
+            topLeft = static_cast<int>(i);
+        }
+        if (i == 0 || sum > largestSum) {
+            largestSum = sum;
+            bottomRight = static_cast<int>(i);
+        }
+        if (i == 0 || difference > largestDifference) {
+            largestDifference = difference;
+            topRight = static_cast<int>(i);
+        }
+        if (i == 0 || difference < smallestDifference) {
+            smallestDifference = difference;
+            bottomLeft = static_cast<int>(i);
+        }
+    }
+
+    if (topLeft == topRight || topLeft == bottomRight ||
+        topLeft == bottomLeft || topRight == bottomRight ||
+        topRight == bottomLeft || bottomRight == bottomLeft) {
+        return false;
+    }
+
+    ordered = {
+        cv::Point2f(points[topLeft]),
+        cv::Point2f(points[topRight]),
+        cv::Point2f(points[bottomRight]),
+        cv::Point2f(points[bottomLeft])
+    };
+
+    return true;
+}
+
+#endif
 
 
 int main() {
@@ -62,7 +123,8 @@ int main() {
     std::cout << "Camera opened successfully. Press 'q' to quit." << std::endl;
 
     cv::Mat frame;
-    cv::Mat gray, thresh;
+    cv::Mat gray, thresh, rectified;
+    const cv::Size rectifiedSize(640, 480);
 
     AudioSource mySource("pipNoise.mp3");
     AudioOutput mySpeaker;
@@ -90,17 +152,13 @@ int main() {
 
         bool markerDetected = false;
 
-        // Check every detected shape.
+        // Find the first valid four-corner contour.
         for (const std::vector<cv::Point>& contour : contours) {
-            // Ignore very small areas, which are usually camera noise.
             if (cv::contourArea(contour) < 500) {
                 continue;
             }
 
-            // This is the simplified version of the original contour.
             std::vector<cv::Point> approximatedContour;
-
-            // The allowed error is 2% of the contour's perimeter.
             double epsilon = 0.02 * cv::arcLength(contour, true);
             cv::approxPolyDP(
                 contour,
@@ -109,24 +167,66 @@ int main() {
                 true
             );
 
-            // A convex contour has no inward dents. A square is convex.
-            bool isConvex = approximatedContour.size() >= 3 &&
+            bool isConvex = approximatedContour.size() == 4 &&
                             cv::isContourConvex(approximatedContour);
+            if (!isConvex) {
+                continue;
+            }
 
-            if (isConvex) {
-                markerDetected = true;
-                // Draw the simplified convex shape in green.
-                std::vector<std::vector<cv::Point>> shape{
-                    approximatedContour
-                };
-                cv::drawContours(
-                    frame,
-                    shape,
-                    0,
-                    cv::Scalar(0, 255, 0),
-                    3
+            std::vector<cv::Point2f> corners;
+            if (!orderCorners(approximatedContour, corners)) {
+                continue;
+            }
+
+            cv::TermCriteria criteria(
+                cv::TermCriteria::EPS | cv::TermCriteria::MAX_ITER,
+                40,
+                0.01
+            );
+            cv::cornerSubPix(
+                gray,
+                corners,
+                cv::Size(5, 5),
+                cv::Size(-1, -1),
+                criteria
+            );
+
+            std::vector<cv::Point2f> destinationCorners = {
+                {0.0f, 0.0f},
+                {static_cast<float>(rectifiedSize.width - 1), 0.0f},
+                {static_cast<float>(rectifiedSize.width - 1),
+                 static_cast<float>(rectifiedSize.height - 1)},
+                {0.0f, static_cast<float>(rectifiedSize.height - 1)}
+            };
+
+            cv::Mat transform = cv::getPerspectiveTransform(
+                corners,
+                destinationCorners
+            );
+
+            cv::warpPerspective(
+                frame,
+                rectified,
+                transform,
+                rectifiedSize
+            );
+
+            markerDetected = true;
+
+            std::vector<cv::Point> displayCorners;
+            for (const cv::Point2f& corner : corners) {
+                displayCorners.emplace_back(
+                    cv::Point(cvRound(corner.x), cvRound(corner.y))
                 );
             }
+            cv::polylines(
+                frame,
+                displayCorners,
+                true,
+                cv::Scalar(0, 255, 0),
+                3
+            );
+            break;
         }
 
         if (markerDetected) {
@@ -139,6 +239,9 @@ int main() {
         cv::imshow("Camera Feed", frame);
         cv::imshow("Grayscale", gray);
         cv::imshow("Thresholded Image", thresh);
+        if (markerDetected) {
+            cv::imshow("Rectified", rectified);
+        }
 
         // Exit when user presses 'q'
         int key = (int)cv::waitKey(1) & 0xFF;
