@@ -165,6 +165,7 @@ int main() {
         );
 
         bool markerDetected = false;
+        int blackPixels = 0;
 
         // Find the first valid four-corner contour.
         for (const std::vector<cv::Point>& contour : contours) {
@@ -208,6 +209,16 @@ int main() {
                 cv::Size(-1, -1),
                 criteria
             );
+
+            std::cout << "Detected corners:\n";
+            std::cout << "  Top-left:     (" << corners[0].x << ", "
+                      << corners[0].y << ")\n";
+            std::cout << "  Top-right:    (" << corners[1].x << ", "
+                      << corners[1].y << ")\n";
+            std::cout << "  Bottom-right: (" << corners[2].x << ", "
+                      << corners[2].y << ")\n";
+            std::cout << "  Bottom-left:  (" << corners[3].x << ", "
+                      << corners[3].y << ")\n";
 
             // Measure the marker's area in square pixels.
             double markerArea = cv::contourArea(approximatedContour);
@@ -254,13 +265,22 @@ int main() {
                 2
             );
 
+            cv::Mat mask = cv::Mat::zeros(thresh.size(), CV_8UC1);
+            std::vector<std::vector<cv::Point>> maskContour = {displayCorners};
+            cv::drawContours(mask, maskContour, 0, cv::Scalar(255), cv::FILLED);
+
+            cv::Mat isolatedMarkerPixels;
+            
+            cv::bitwise_and(thresh, mask, isolatedMarkerPixels);
+            blackPixels = cv::countNonZero(isolatedMarkerPixels);
+
+            cv::imshow("Isolated Mask", isolatedMarkerPixels);// prof of concept, can be removed later
+
             break; 
         }
 
         if (markerDetected) {
-            // TODO: Implementera logik för att isolera och räkna svarta pixlar inuti den gröna konturen.
-            // Ersätt variabeln 'blackPixels' med det faktiska beräknade värdet när detta är klart.
-            int blackPixels = 0; 
+            
             mySpeaker.updateFrequency(mySource, blackPixels);
         } else {
             mySpeaker.resetDetection();
