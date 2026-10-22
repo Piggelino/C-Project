@@ -2,6 +2,7 @@
 #include <cstdlib> 
 #include <string> 
 #include <vector>
+#include "DistanceEstimator.hpp"
 
 #if __has_include(<opencv2/opencv.hpp>)
 #include <opencv2/opencv.hpp>
