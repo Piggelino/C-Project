@@ -209,12 +209,26 @@ int main() {
                 criteria
             );
 
+            std::cout << "Detected corners:\n";
+            std::cout << "  Top-left:     (" << corners[0].x << ", "
+                      << corners[0].y << ")\n";
+            std::cout << "  Top-right:    (" << corners[1].x << ", "
+                      << corners[1].y << ")\n";
+            std::cout << "  Bottom-right: (" << corners[2].x << ", "
+                      << corners[2].y << ")\n";
+            std::cout << "  Bottom-left:  (" << corners[3].x << ", "
+                      << corners[3].y << ")\n";
+
             // Measure the marker's area in square pixels.
-            double markerArea = cv::contourArea(approximatedContour);
+            double markerArea =
+                cv::contourArea(approximatedContour);
 
             // Estimate proximity using the distance estimator.
-            double proximity = distanceEstimator.estimateProximity(markerArea);
-            const char* category = distanceEstimator.getCategory(proximity);
+            double proximity =
+                distanceEstimator.estimateProximity(markerArea);
+
+            const char* category =
+                distanceEstimator.getCategory(proximity);
 
             markerDetected = true;
 
