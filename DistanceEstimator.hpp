@@ -33,6 +33,14 @@ public:
             return "MEDIUM";
         }
 
+        
         return "CLOSE";
     }
+
+    // Calculate the marker's horizontal center from its four corners.
+    double getCenterX(double x1, double x2,
+                      double x3, double x4) const {
+        return (x1 + x2 + x3 + x4) / 4.0;
+    }
 };
+

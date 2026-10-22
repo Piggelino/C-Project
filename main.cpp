@@ -212,11 +212,30 @@ int main() {
             // Measure the marker's area in square pixels.
             double markerArea = cv::contourArea(approximatedContour);
 
+            
             // Estimate proximity using the distance estimator.
             double proximity = distanceEstimator.estimateProximity(markerArea);
             const char* category = distanceEstimator.getCategory(proximity);
 
+            // Calculate the marker's horizontal center.
+            double centerX = distanceEstimator.getCenterX(
+                corners[0].x,
+                corners[1].x,
+                corners[2].x,
+                corners[3].x
+            );
+
+            // Print measurements for testing and debugging.
+            std::cout
+                << "Marker candidate"
+                << " | Area: " << static_cast<int>(markerArea) << " px2"
+                << " | Proximity: " << static_cast<int>(proximity * 100) << "%"
+                << " | Distance: " << category
+                << " | Center X: " << static_cast<int>(centerX) << " px"
+                << std::endl;
+
             markerDetected = true;
+
 
             // Draw the refined marker outline.
             std::vector<cv::Point> displayCorners;
