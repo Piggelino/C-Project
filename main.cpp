@@ -1,10 +1,12 @@
 #include <iostream>
 #include <cstdlib> 
+#include <fstream>
 #include <string> 
 #include <vector>
 
 #if __has_include(<opencv2/opencv.hpp>)
 #include <opencv2/opencv.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #define OPENCV_AVAILABLE 1
 #else
@@ -102,6 +104,55 @@ bool orderCorners(
 
     return true;
 }
+
+bool loadMarkerContour(
+    const std::vector<std::string>& paths,
+    std::vector<cv::Point>& markerContour
+) {
+    for (const std::string& path : paths) {
+        std::ifstream markerFile(path);
+        if (!markerFile.good()) {
+            continue;
+        }
+
+        cv::Mat marker = cv::imread(path, cv::IMREAD_GRAYSCALE);
+        if (marker.empty()) {
+            continue;
+        }
+
+        cv::Mat markerThreshold;
+        cv::threshold(
+            marker,
+            markerThreshold,
+            80,
+            255,
+            cv::THRESH_BINARY_INV
+        );
+
+        std::vector<std::vector<cv::Point>> contours;
+        cv::findContours(
+            markerThreshold,
+            contours,
+            cv::RETR_EXTERNAL,
+            cv::CHAIN_APPROX_SIMPLE
+        );
+
+        double largestArea = 0.0;
+        for (const std::vector<cv::Point>& contour : contours) {
+            double area = cv::contourArea(contour);
+            if (area > largestArea) {
+                largestArea = area;
+                markerContour = contour;
+            }
+        }
+
+        if (!markerContour.empty()) {
+            return true;
+        }
+    }
+
+    return false;
+}
 #endif
 
 
@@ -119,6 +170,15 @@ int main() {
     }
 
     std::cout << "Camera opened successfully. Press 'q' to quit." << std::endl;
+
+    std::vector<cv::Point> markerContour;
+    if (!loadMarkerContour(
+            {"marker.png", "../marker.png", "../../marker.png"},
+            markerContour
+        )) {
+        std::cerr << "ERROR: Could not load marker.png." << std::endl;
+        return -1;
+    }
 
     cv::Mat frame;
     cv::Mat gray, thresh;
@@ -167,6 +227,16 @@ int main() {
             bool isConvex = approximatedContour.size() == 4 &&
                             cv::isContourConvex(approximatedContour);
             if (!isConvex) {
+                continue;
+            }
+
+            double shapeDifference = cv::matchShapes(
+                approximatedContour,
+                markerContour,
+                cv::CONTOURS_MATCH_I1,
+                0.0
+            );
+            if (shapeDifference > 0.05) {
                 continue;
             }
 
