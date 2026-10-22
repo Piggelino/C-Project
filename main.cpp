@@ -51,9 +51,74 @@ public:
             std::string command = "afplay " + source.getFilePath() + " &";
             system(command.c_str());
             frameCounter = 0;
+            std::cout << "Spelar ljud med dynamisk frekvens: " << source.getFilePath() << std::endl;
         }
     }
+    void resetDetection() {
+        frameCounter = 0;
+    }
 };
+
+#if OPENCV_AVAILABLE
+bool orderCorners(
+    const std::vector<cv::Point>& points,
+    std::vector<cv::Point2f>& ordered
+) {
+    if (points.size() != 4) {
+        return false;
+    }
+
+    ordered.clear();
+    ordered.reserve(4);
+
+    int topLeft = 0;
+    int topRight = 0;
+    int bottomRight = 0;
+    int bottomLeft = 0;
+
+    float smallestSum = 0.0f;
+    float largestSum = 0.0f;
+    float smallestDifference = 0.0f;
+    float largestDifference = 0.0f;
+
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        float sum = static_cast<float>(points[i].x + points[i].y);
+        float difference = static_cast<float>(points[i].x - points[i].y);
+
+        if (i == 0 || sum < smallestSum) {
+            smallestSum = sum;
+            topLeft = static_cast<int>(i);
+        }
+        if (i == 0 || sum > largestSum) {
+            largestSum = sum;
+            bottomRight = static_cast<int>(i);
+        }
+        if (i == 0 || difference > largestDifference) {
+            largestDifference = difference;
+            topRight = static_cast<int>(i);
+        }
+        if (i == 0 || difference < smallestDifference) {
+            smallestDifference = difference;
+            bottomLeft = static_cast<int>(i);
+        }
+    }
+
+    if (topLeft == topRight || topLeft == bottomRight ||
+        topLeft == bottomLeft || topRight == bottomRight ||
+        topRight == bottomLeft || bottomRight == bottomLeft) {
+        return false;
+    }
+
+    ordered = {
+        cv::Point2f(points[topLeft]),
+        cv::Point2f(points[topRight]),
+        cv::Point2f(points[bottomRight]),
+        cv::Point2f(points[bottomLeft])
+    };
+
+    return true;
+}
+#endif
 
 int main() {
 #if !OPENCV_AVAILABLE
@@ -75,6 +140,7 @@ int main() {
 
     AudioSource mySource("pipNoise.mp3");
     AudioOutput mySpeaker;
+    DistanceEstimator distanceEstimator;
 
     while (true) {
         // Grab a frame
@@ -99,17 +165,13 @@ int main() {
 
         bool markerDetected = false;
 
-        // Check every detected shape.
+        // Find the first valid four-corner contour.
         for (const std::vector<cv::Point>& contour : contours) {
-            // Ignore very small areas, which are usually camera noise.
             if (cv::contourArea(contour) < 500) {
                 continue;
             }
 
-            // This is the simplified version of the original contour.
             std::vector<cv::Point> approximatedContour;
-
-            // The allowed error is 2% of the contour's perimeter.
             double epsilon = 0.02 * cv::arcLength(contour, true);
             cv::approxPolyDP(
                 contour,
@@ -118,32 +180,87 @@ int main() {
                 true
             );
 
-            // A convex contour has no inward dents. A square is convex.
-            bool isConvex = approximatedContour.size() >= 3 &&
+            // Validate the marker candidate.
+            bool isConvex = approximatedContour.size() == 4 &&
                             cv::isContourConvex(approximatedContour);
 
-            if (isConvex) {
-                markerDetected = true;
-                // Draw the simplified convex shape in green.
-                std::vector<std::vector<cv::Point>> shape{
-                    approximatedContour
-                };
-                cv::drawContours(
-                    frame,
-                    shape,
-                    0,
-                    cv::Scalar(0, 255, 0),
-                    3
-                );//Efter detta måste vi isolera svarta pixlarna i den gröna konturen och räkna antalet svarta pixlar i den gröna konturen.
-                //För att isolera de svarta pixlarna behöver vi hitta kordinaterna för den gröna konturens hörn och sedan skapa en mask som täcker det området. 
-                //Sedan kan vi använda den masken för att räkna antalet svarta pixlar i det området.
-                //Om antalet svarta pixlar är större än ett visst tröskelvärde, ska vi spela upp ljudet omgående i en loop, och om antalet svarta pixlar blöir fler ska vi spela upp ljudet i en snabbare takt. 
-                //Om antalet svarta pixlar minskar ska vi sakta ner ljudet tills det stannar helt.
+            if (!isConvex) {
+                continue;
             }
+
+            // Order and refine the marker corners.
+            std::vector<cv::Point2f> corners;
+            if (!orderCorners(approximatedContour, corners)) {
+                continue;
+            }
+
+            cv::TermCriteria criteria(
+                cv::TermCriteria::EPS | cv::TermCriteria::MAX_ITER,
+                40,
+                0.01
+            );
+
+            cv::cornerSubPix(
+                gray,
+                corners,
+                cv::Size(5, 5),
+                cv::Size(-1, -1),
+                criteria
+            );
+
+            // Measure the marker's area in square pixels.
+            double markerArea = cv::contourArea(approximatedContour);
+
+            // Estimate proximity using the distance estimator.
+            double proximity = distanceEstimator.estimateProximity(markerArea);
+            const char* category = distanceEstimator.getCategory(proximity);
+
+            markerDetected = true;
+
+            // Draw the refined marker outline.
+            std::vector<cv::Point> displayCorners;
+            for (const cv::Point2f& corner : corners) {
+                displayCorners.emplace_back(
+                    cvRound(corner.x),
+                    cvRound(corner.y)
+                );
+            }
+
+            cv::polylines(
+                frame,
+                displayCorners,
+                true,
+                cv::Scalar(0, 255, 0),
+                3
+            );
+
+            // Display proximity and area on the camera feed.
+            std::string label =
+                std::string(category) + " | " +
+                std::to_string(static_cast<int>(proximity * 100)) + "% | Area: " +
+                std::to_string(static_cast<int>(markerArea)) + " px2";
+
+            cv::Rect box = cv::boundingRect(approximatedContour);
+            cv::Point textPosition(box.x, std::max(25, box.y - 10));
+
+            cv::putText(
+                frame,
+                label,
+                textPosition,
+                cv::FONT_HERSHEY_SIMPLEX,
+                0.7,
+                cv::Scalar(0, 255, 0),
+                2
+            );
+
+            break; 
         }
 
-        if (markerDetected) {//detta kan inte gälla till när vi har implementerat logiken för att räkna svarta pixlar i den gröna konturen.
-            mySpeaker.play(mySource);
+        if (markerDetected) {
+            // TODO: Implementera logik för att isolera och räkna svarta pixlar inuti den gröna konturen.
+            // Ersätt variabeln 'blackPixels' med det faktiska beräknade värdet när detta är klart.
+            int blackPixels = 0; 
+            mySpeaker.updateFrequency(mySource, blackPixels);
         } else {
             mySpeaker.resetDetection();
         }
