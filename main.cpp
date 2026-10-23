@@ -3,11 +3,13 @@
 #include <fstream>
 #include <string> 
 #include <vector>
+#include "DistanceEstimator.hpp"
 
 #if __has_include(<opencv2/opencv.hpp>)
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/geometry.hpp>
 #define OPENCV_AVAILABLE 1
 #else
 #define OPENCV_AVAILABLE 0
@@ -27,21 +29,36 @@ public:
 
 class AudioOutput {
 private:
-    bool isPlaying;
+    int frameCounter;
 public:
     AudioOutput() {
-        isPlaying = false;
+        frameCounter = 0;
     }
-    void play(AudioSource& source) {
-        if (!isPlaying) {
+    void updateFrequency(AudioSource& source, int blackPixels) {
+        frameCounter++;
+        int framesToWait = -1;
+
+        if (blackPixels > 2000){
+            framesToWait = 2;
+        } 
+        else if (blackPixels > 1000){
+            framesToWait = 10;
+        }
+        else if (blackPixels > 500){
+            framesToWait = 30;
+        }
+        else if (blackPixels > 100){
+            framesToWait = 60;
+        }
+        if (framesToWait != -1 && frameCounter >= framesToWait) {
             std::string command = "afplay " + source.getFilePath() + " &";
             system(command.c_str());
-            isPlaying = true;
-            std::cout << "Spelar ljud: " << source.getFilePath() << std::endl;
+            frameCounter = 0;
+            std::cout << "Spelar ljud med dynamisk frekvens: " << source.getFilePath() << std::endl;
         }
     }
     void resetDetection() {
-        isPlaying = false;
+        frameCounter = 0;
     }
 };
 
@@ -155,7 +172,6 @@ bool loadMarkerContour(
 }
 #endif
 
-
 int main() {
 #if !OPENCV_AVAILABLE
     std::cerr << "ERROR: OpenCV headers were not found. Install OpenCV and configure the include path.\n";
@@ -185,6 +201,7 @@ int main() {
 
     AudioSource mySource("pipNoise.mp3");
     AudioOutput mySpeaker;
+    DistanceEstimator distanceEstimator;
 
     while (true) {
         // Grab a frame
@@ -208,6 +225,7 @@ int main() {
         );
 
         bool markerDetected = false;
+        int blackPixels = 0;
 
         // Find the first valid four-corner contour.
         for (const std::vector<cv::Point>& contour : contours) {
@@ -224,8 +242,10 @@ int main() {
                 true
             );
 
+            // Validate the marker candidate.
             bool isConvex = approximatedContour.size() == 4 &&
                             cv::isContourConvex(approximatedContour);
+
             if (!isConvex) {
                 continue;
             }
@@ -240,6 +260,7 @@ int main() {
                 continue;
             }
 
+            // Order and refine the marker corners.
             std::vector<cv::Point2f> corners;
             if (!orderCorners(approximatedContour, corners)) {
                 continue;
@@ -250,6 +271,7 @@ int main() {
                 40,
                 0.01
             );
+
             cv::cornerSubPix(
                 gray,
                 corners,
@@ -260,22 +282,32 @@ int main() {
 
             std::cout << "Detected corners:\n";
             std::cout << "  Top-left:     (" << corners[0].x << ", "
-                 << corners[0].y << ")\n";
+                      << corners[0].y << ")\n";
             std::cout << "  Top-right:    (" << corners[1].x << ", "
-                << corners[1].y << ")\n";
+                      << corners[1].y << ")\n";
             std::cout << "  Bottom-right: (" << corners[2].x << ", "
-                << corners[2].y << ")\n";
+                      << corners[2].y << ")\n";
             std::cout << "  Bottom-left:  (" << corners[3].x << ", "
-                << corners[3].y << ")\n";
+                      << corners[3].y << ")\n";
+
+            // Measure the marker's area in square pixels.
+            double markerArea = cv::contourArea(approximatedContour);
+
+            // Estimate proximity using the distance estimator.
+            double proximity = distanceEstimator.estimateProximity(markerArea);
+            const char* category = distanceEstimator.getCategory(proximity);
 
             markerDetected = true;
 
+            // Draw the refined marker outline.
             std::vector<cv::Point> displayCorners;
             for (const cv::Point2f& corner : corners) {
                 displayCorners.emplace_back(
-                    cv::Point(cvRound(corner.x), cvRound(corner.y))
+                    cvRound(corner.x),
+                    cvRound(corner.y)
                 );
             }
+
             cv::polylines(
                 frame,
                 displayCorners,
@@ -283,11 +315,43 @@ int main() {
                 cv::Scalar(0, 255, 0),
                 3
             );
-            break;
+
+            // Display proximity and area on the camera feed.
+            std::string label =
+                std::string(category) + " | " +
+                std::to_string(static_cast<int>(proximity * 100)) + "% | Area: " +
+                std::to_string(static_cast<int>(markerArea)) + " px2";
+
+            cv::Rect box = cv::boundingRect(approximatedContour);
+            cv::Point textPosition(box.x, std::max(25, box.y - 10));
+
+            cv::putText(
+                frame,
+                label,
+                textPosition,
+                cv::FONT_HERSHEY_SIMPLEX,
+                0.7,
+                cv::Scalar(0, 255, 0),
+                2
+            );
+
+            cv::Mat mask = cv::Mat::zeros(thresh.size(), CV_8UC1);
+            std::vector<std::vector<cv::Point>> maskContour = {displayCorners};
+            cv::drawContours(mask, maskContour, 0, cv::Scalar(255), cv::FILLED);
+
+            cv::Mat isolatedMarkerPixels;
+            
+            cv::bitwise_and(thresh, mask, isolatedMarkerPixels);
+            blackPixels = cv::countNonZero(isolatedMarkerPixels);
+
+            cv::imshow("Isolated Mask", isolatedMarkerPixels);// prof of concept, can be removed later
+
+            break; 
         }
 
         if (markerDetected) {
-            mySpeaker.play(mySource);
+            
+            mySpeaker.updateFrequency(mySource, blackPixels);
         } else {
             mySpeaker.resetDetection();
         }
@@ -296,7 +360,6 @@ int main() {
         cv::imshow("Camera Feed", frame);
         cv::imshow("Grayscale", gray);
         cv::imshow("Thresholded Image", thresh);
-
 
         // Exit when user presses 'q'
         int key = (int)cv::waitKey(1) & 0xFF;
