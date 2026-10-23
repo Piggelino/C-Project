@@ -274,7 +274,7 @@ int main() {
             cv::bitwise_and(thresh, mask, isolatedMarkerPixels);
             blackPixels = cv::countNonZero(isolatedMarkerPixels);
 
-            cv::imshow("Isolated Mask", isolatedMarkerPixels);// prof of concept, can be removed later
+            cv::imshow("Isolated Mask", isolatedMarkerPixels);// prof, can be removed later
 
             break; 
         }
