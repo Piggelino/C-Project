@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstdlib> 
+#include <cmath>
 #include <string> 
 #include <vector>
 #include "DistanceEstimator.hpp"
@@ -7,7 +8,6 @@
 #if __has_include(<opencv2/opencv.hpp>)
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/geometry.hpp>
 #define OPENCV_AVAILABLE 1
 #else
 #define OPENCV_AVAILABLE 0
@@ -59,6 +59,7 @@ public:
         frameCounter = 0;
     }
 };
+
 
 #if OPENCV_AVAILABLE
 bool orderCorners(
@@ -210,6 +211,59 @@ int main() {
                 criteria
             );
 
+            // Map a canonical, square marker to the detected quadrilateral.
+            // The top edge of the mapped square gives the marker's image-plane
+            // rotation. This is not the full 3D pose rotation.
+            constexpr int warpedMarkerSize = 300;
+            const std::vector<cv::Point2f> referenceCorners = {
+                cv::Point2f(0.0f, 0.0f),
+                cv::Point2f(static_cast<float>(warpedMarkerSize - 1), 0.0f),
+                cv::Point2f(
+                    static_cast<float>(warpedMarkerSize - 1),
+                    static_cast<float>(warpedMarkerSize - 1)
+                ),
+                cv::Point2f(0.0f, static_cast<float>(warpedMarkerSize - 1))
+            };
+
+            cv::Mat homography = cv::findHomography(
+                referenceCorners,
+                corners,
+                cv::RANSAC
+            );
+
+            double rotationDegrees = 0.0;
+            if (!homography.empty()) {
+                cv::Mat warpedMarker;
+
+                // H maps the reference square to the camera image. Using
+                // WARP_INVERSE_MAP maps the camera image back to the square.
+                cv::warpPerspective(
+                    frame,
+                    warpedMarker,
+                    homography,
+                    cv::Size(warpedMarkerSize, warpedMarkerSize),
+                    cv::INTER_LINEAR | cv::WARP_INVERSE_MAP,
+                    cv::BORDER_CONSTANT,
+                    cv::Scalar(0, 0, 0)
+                );
+
+                cv::imshow("Warped Marker", warpedMarker);
+
+                std::vector<cv::Point2f> mappedTopEdge;
+                cv::perspectiveTransform(
+                    std::vector<cv::Point2f>{
+                        referenceCorners[0],
+                        referenceCorners[1]
+                    },
+                    mappedTopEdge,
+                    homography
+                );
+
+                const cv::Point2f topEdge = mappedTopEdge[1] - mappedTopEdge[0];
+                rotationDegrees = std::atan2(topEdge.y, topEdge.x) *
+                                  180.0 / CV_PI;
+            }
+
             std::cout << "Detected corners:\n";
             std::cout << "  Top-left:     (" << corners[0].x << ", "
                       << corners[0].y << ")\n";
@@ -219,6 +273,8 @@ int main() {
                       << corners[2].y << ")\n";
             std::cout << "  Bottom-left:  (" << corners[3].x << ", "
                       << corners[3].y << ")\n";
+            std::cout << "  Rotation:     " << rotationDegrees
+                      << " degrees\n";
 
             // Measure the marker's area in square pixels.
             double markerArea = cv::contourArea(approximatedContour);
@@ -250,7 +306,8 @@ int main() {
             std::string label =
                 std::string(category) + " | " +
                 std::to_string(static_cast<int>(proximity * 100)) + "% | Area: " +
-                std::to_string(static_cast<int>(markerArea)) + " px2";
+                std::to_string(static_cast<int>(markerArea)) + " px2 | Rotation: " +
+                std::to_string(static_cast<int>(rotationDegrees)) + " deg";
 
             cv::Rect box = cv::boundingRect(approximatedContour);
             cv::Point textPosition(box.x, std::max(25, box.y - 10));
