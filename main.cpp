@@ -139,20 +139,9 @@ int main() {
     cv::Mat frame;
     cv::Mat gray, thresh;
 
-    std::vector<std::vector<cv::Point>> contours;
-    std::vector<cv::Point> approximatedContour;
-    std::vector<cv::Point2f> corners;
-    std::vector<cv::Point> displayCorners;
-
-    contours.reserve(50);
-    approximatedContour.reserve(4);
-    corners.reserve(4);
-    displayCorners.reserve(4);
-
     AudioSource mySource("pipNoise.mp3");
     AudioOutput mySpeaker;
     DistanceEstimator distanceEstimator;
-    
 
     while (true) {
         // Grab a frame
@@ -161,17 +150,13 @@ int main() {
             break;
         }
 
-        contours.clear();
-        approximatedContour.clear();
-        corners.clear();
-        displayCorners.clear();
-
         // Convert to grayscale
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
         // Apply Thresholding
         cv::threshold(gray, thresh, 80, 255, cv::THRESH_BINARY_INV);
 
         // A contour is a line around a connected white area in the threshold image.
+        std::vector<std::vector<cv::Point>> contours;
         cv::findContours(
             thresh,
             contours,
@@ -186,8 +171,9 @@ int main() {
         for (const std::vector<cv::Point>& contour : contours) {
             if (cv::contourArea(contour) < 500) {
                 continue;
-            } 
+            }
 
+            std::vector<cv::Point> approximatedContour;
             double epsilon = 0.02 * cv::arcLength(contour, true);
             cv::approxPolyDP(
                 contour,
@@ -205,6 +191,7 @@ int main() {
             }
 
             // Order and refine the marker corners.
+            std::vector<cv::Point2f> corners;
             if (!orderCorners(approximatedContour, corners)) {
                 continue;
             }
@@ -243,6 +230,7 @@ int main() {
             markerDetected = true;
 
             // Draw the refined marker outline.
+            std::vector<cv::Point> displayCorners;
             for (const cv::Point2f& corner : corners) {
                 displayCorners.emplace_back(
                     cvRound(corner.x),
