@@ -137,6 +137,16 @@ int main() {
 
     std::cout << "Camera opened successfully. Press 'q' to quit." << std::endl;
 
+    cv::Mat marker_template = cv::imread("hiro_template.png", cv::IMREAD_GRAYSCALE);
+    if (marker_template.empty()) {
+        std::cerr << "ERROR: Could not load hiro_template.png" << std::endl;
+        return -1;
+    }
+
+    constexpr int warpedMarkerSize = 300;
+    // Säkerställ att mallen är exakt 300x300 pixlar för att matcha warpedMarker
+    cv::resize(marker_template, marker_template, cv::Size(warpedMarkerSize, warpedMarkerSize));
+
     cv::Mat frame;
     cv::Mat gray, thresh;
 
@@ -214,7 +224,7 @@ int main() {
             // Map a canonical, square marker to the detected quadrilateral.
             // The top edge of the mapped square gives the marker's image-plane
             // rotation. This is not the full 3D pose rotation.
-            constexpr int warpedMarkerSize = 300;
+
             const std::vector<cv::Point2f> referenceCorners = {
                 cv::Point2f(0.0f, 0.0f),
                 cv::Point2f(static_cast<float>(warpedMarkerSize - 1), 0.0f),
@@ -232,13 +242,17 @@ int main() {
             );
 
             double rotationDegrees = 0.0;
+
+            double bestMatchVAl = -1.0; 
+
+
             if (!homography.empty()) {
                 cv::Mat warpedMarker;
 
                 // H maps the reference square to the camera image. Using
                 // WARP_INVERSE_MAP maps the camera image back to the square.
                 cv::warpPerspective(
-                    frame,
+                    gray,
                     warpedMarker,
                     homography,
                     cv::Size(warpedMarkerSize, warpedMarkerSize),
@@ -248,6 +262,28 @@ int main() {
                 );
 
                 cv::imshow("Warped Marker", warpedMarker);
+
+                cv::Mat rotatedWarp;
+                warpedMarker.copyTo(rotatedWarp);
+
+                // Testa alla 4 möjliga rotationer av den upprätade markören
+                for (int rot = 0; rot < 4; ++rot) {
+                    cv::Mat match_result;
+                    cv::matchTemplate(rotatedWarp, marker_template, match_result, cv::TM_CCOEFF_NORMED);
+                    
+                    double minVal, maxVal;
+                    cv::minMaxLoc(match_result, &minVal, &maxVal);
+                    
+                    if (maxVal > bestMatchVal) {
+                        bestMatchVal = maxVal;
+                    }
+
+                    // Rotera bilden 90 grader inför nästa iteration
+                    cv::rotate(rotatedWarp, rotatedWarp, cv::ROTATE_90_CLOCKWISE);
+                }
+                if (bestMatchVal < 0.6) {
+                    continue; // Detta var en fyrkant, men inte Hiro
+                }
 
                 std::vector<cv::Point2f> mappedTopEdge;
                 cv::perspectiveTransform(
@@ -262,6 +298,8 @@ int main() {
                 const cv::Point2f topEdge = mappedTopEdge[1] - mappedTopEdge[0];
                 rotationDegrees = std::atan2(topEdge.y, topEdge.x) *
                                   180.0 / CV_PI;
+            }else {
+                continue; // Homography misslyckades, hoppa över denna kontur
             }
 
             std::cout << "Detected corners:\n";
@@ -305,6 +343,7 @@ int main() {
             // Display proximity and area on the camera feed.
             std::string label =
                 std::string(category) + " | " +
+                std::to_string(static_cast<int>(bestMatchVal * 100)) + "% | Rot: " +
                 std::to_string(static_cast<int>(proximity * 100)) + "% | Area: " +
                 std::to_string(static_cast<int>(markerArea)) + " px2 | Rotation: " +
                 std::to_string(static_cast<int>(rotationDegrees)) + " deg";
