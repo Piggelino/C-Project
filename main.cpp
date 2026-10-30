@@ -8,6 +8,7 @@
 #if __has_include(<opencv2/opencv.hpp>)
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/calib3d.hpp>
 #define OPENCV_AVAILABLE 1
 #else
 #define OPENCV_AVAILABLE 0
@@ -137,7 +138,7 @@ int main() {
 
     std::cout << "Camera opened successfully. Press 'q' to quit." << std::endl;
 
-    cv::Mat marker_template = cv::imread("hiro_template.png", cv::IMREAD_GRAYSCALE);
+    cv::Mat marker_template = cv::imread("../hiro_template.png", cv::IMREAD_GRAYSCALE);
     if (marker_template.empty()) {
         std::cerr << "ERROR: Could not load hiro_template.png" << std::endl;
         return -1;
@@ -243,7 +244,7 @@ int main() {
 
             double rotationDegrees = 0.0;
 
-            double bestMatchVAl = -1.0; 
+            double bestMatchVal = -1.0; 
 
 
             if (!homography.empty()) {
