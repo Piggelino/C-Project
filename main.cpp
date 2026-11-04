@@ -3,6 +3,7 @@
 #include <string> 
 #include <vector>
 #include "DistanceEstimator.hpp"
+#include "MarkerTemplateMatcher.hpp" // Verify Hiro marker pattern
 
 #if __has_include(<opencv2/opencv.hpp>)
 #include <opencv2/opencv.hpp>
@@ -140,8 +141,15 @@ int main() {
     cv::Mat gray, thresh;
 
     AudioSource mySource("pipNoise.mp3");
-    AudioOutput mySpeaker;
-    DistanceEstimator distanceEstimator;
+AudioOutput mySpeaker;
+DistanceEstimator distanceEstimator;
+
+// Load Hiro template once before processing camera frames.
+MarkerTemplateMatcher markerMatcher;
+if (!markerMatcher.loadTemplate("marker2.png.webp")) {
+    std::cerr << "ERROR: Could not load Hiro template!" << std::endl;
+    return -1;
+}
 
     while (true) {
         // Grab a frame
@@ -223,11 +231,17 @@ int main() {
             // Measure the marker's area in square pixels.
             double markerArea = cv::contourArea(approximatedContour);
 
-            // Estimate proximity using the distance estimator.
-            double proximity = distanceEstimator.estimateProximity(markerArea);
-            const char* category = distanceEstimator.getCategory(proximity);
+            // Verify the Hiro pattern before accepting the candidate.
+if (!markerMatcher.matches(gray, corners)) {
+    continue; // Wrong marker: ignore and check the next candidate.
+}
 
-            markerDetected = true;
+// Only the verified Hiro marker can trigger detection.
+markerDetected = true;
+
+// Estimate proximity for the verified marker.
+double proximity = distanceEstimator.estimateProximity(markerArea);
+const char* category = distanceEstimator.getCategory(proximity);
 
             // Draw the refined marker outline.
             std::vector<cv::Point> displayCorners;
