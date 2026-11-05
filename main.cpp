@@ -172,6 +172,12 @@ if (!markerMatcher.loadTemplate("marker2.png.webp")) {
                 criteria
             );
 
+            // A quadrilateral is only a candidate; accept it only when its
+            // perspective-normalized image matches the Hiro template.
+            if (!markerMatcher.matches(gray, corners)) {
+                continue;
+            }
+
             const std::vector<cv::Point2f> warpedCorners = {
                 cv::Point2f(0.0f, 0.0f),
                 cv::Point2f(399.0f, 0.0f),
@@ -200,21 +206,11 @@ if (!markerMatcher.loadTemplate("marker2.png.webp")) {
             // Measure the marker's area in square pixels.
             double markerArea = cv::contourArea(approximatedContour);
 
-            // Verify the Hiro pattern before accepting the candidate.
-            if (!markerMatcher.matches(gray, corners)) {
-                continue; // Wrong marker: ignore and check the next candidate.
-            }
-
             // Estimate proximity using the distance estimator.
             proximity = distanceEstimator.estimateProximity(markerArea);
             const char* category = distanceEstimator.getCategory(proximity);
 
-// Only the verified Hiro marker can trigger detection.
-markerDetected = true;
-
-// Estimate proximity for the verified marker.
-double proximity = distanceEstimator.estimateProximity(markerArea);
-const char* category = distanceEstimator.getCategory(proximity);
+            markerDetected = true;
 
             // Draw the refined marker outline.
             std::vector<cv::Point> displayCorners;

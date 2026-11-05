@@ -2,7 +2,6 @@
 #pragma once
 #include <iostream>
 #include <opencv2/opencv.hpp>
-#include <opencv2/geometry.hpp>
 #include <algorithm>
 #include <vector>
 
@@ -90,7 +89,7 @@ return true;
             // DEBUG: Print the similarity score for each candidate.
 std::cout << "Hiro similarity: " << similarity << std::endl;
 
-if (similarity >= 0.80) {
+if (similarity >= 0.9) {
     return true;
 }
 
