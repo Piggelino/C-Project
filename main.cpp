@@ -1,65 +1,17 @@
 #include <iostream>
-#include <cstdlib> 
-#include <string> 
+#include <string>
 #include <vector>
+#include "AudioOutput.hpp"
 #include "DistanceEstimator.hpp"
 #include "MarkerTemplateMatcher.hpp" // Verify Hiro marker pattern
 
 #if __has_include(<opencv2/opencv.hpp>)
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/geometry.hpp>
 #define OPENCV_AVAILABLE 1
 #else
 #define OPENCV_AVAILABLE 0
 #endif
-
-class AudioSource {
-private:
-    std::string filePath;
-public:
-    AudioSource(std::string path) {
-        filePath = path;
-    }
-    std::string getFilePath() {
-        return filePath;
-    }
-};
-
-class AudioOutput {
-private:
-    int frameCounter;
-public:
-    AudioOutput() {
-        frameCounter = 0;
-    }
-    void updateFrequency(AudioSource& source, int blackPixels) {
-        frameCounter++;
-        int framesToWait = -1;
-
-        if (blackPixels > 2000){
-            framesToWait = 2;
-        } 
-        else if (blackPixels > 1000){
-            framesToWait = 10;
-        }
-        else if (blackPixels > 500){
-            framesToWait = 30;
-        }
-        else if (blackPixels > 100){
-            framesToWait = 60;
-        }
-        if (framesToWait != -1 && frameCounter >= framesToWait) {
-            std::string command = "afplay " + source.getFilePath() + " &";
-            system(command.c_str());
-            frameCounter = 0;
-            std::cout << "Spelar ljud med dynamisk frekvens: " << source.getFilePath() << std::endl;
-        }
-    }
-    void resetDetection() {
-        frameCounter = 0;
-    }
-};
 
 #if OPENCV_AVAILABLE
 bool orderCorners(
@@ -139,6 +91,7 @@ int main() {
 
     cv::Mat frame;
     cv::Mat gray, thresh;
+    cv::Mat warpedImage;
 
     AudioSource mySource("pipNoise.mp3");
 AudioOutput mySpeaker;
@@ -173,7 +126,8 @@ if (!markerMatcher.loadTemplate("marker2.png.webp")) {
         );
 
         bool markerDetected = false;
-        int blackPixels = 0;
+        double proximity = 0.0;
+        warpedImage = cv::Mat::zeros(400, 400, frame.type());
 
         // Find the first valid four-corner contour.
         for (const std::vector<cv::Point>& contour : contours) {
@@ -218,6 +172,21 @@ if (!markerMatcher.loadTemplate("marker2.png.webp")) {
                 criteria
             );
 
+            const std::vector<cv::Point2f> warpedCorners = {
+                cv::Point2f(0.0f, 0.0f),
+                cv::Point2f(399.0f, 0.0f),
+                cv::Point2f(399.0f, 399.0f),
+                cv::Point2f(0.0f, 399.0f)
+            };
+            const cv::Mat perspectiveTransform =
+                cv::getPerspectiveTransform(corners, warpedCorners);
+            cv::warpPerspective(
+                frame,
+                warpedImage,
+                perspectiveTransform,
+                cv::Size(400, 400)
+            );
+
             std::cout << "Detected corners:\n";
             std::cout << "  Top-left:     (" << corners[0].x << ", "
                       << corners[0].y << ")\n";
@@ -232,9 +201,13 @@ if (!markerMatcher.loadTemplate("marker2.png.webp")) {
             double markerArea = cv::contourArea(approximatedContour);
 
             // Verify the Hiro pattern before accepting the candidate.
-if (!markerMatcher.matches(gray, corners)) {
-    continue; // Wrong marker: ignore and check the next candidate.
-}
+            if (!markerMatcher.matches(gray, corners)) {
+                continue; // Wrong marker: ignore and check the next candidate.
+            }
+
+            // Estimate proximity using the distance estimator.
+            proximity = distanceEstimator.estimateProximity(markerArea);
+            const char* category = distanceEstimator.getCategory(proximity);
 
 // Only the verified Hiro marker can trigger detection.
 markerDetected = true;
@@ -286,8 +259,6 @@ const char* category = distanceEstimator.getCategory(proximity);
             cv::Mat isolatedMarkerPixels;
             
             cv::bitwise_and(thresh, mask, isolatedMarkerPixels);
-            blackPixels = cv::countNonZero(isolatedMarkerPixels);
-
             cv::imshow("Isolated Mask", isolatedMarkerPixels);// prof of concept, can be removed later
 
             break; 
@@ -295,7 +266,7 @@ const char* category = distanceEstimator.getCategory(proximity);
 
         if (markerDetected) {
             
-            mySpeaker.updateFrequency(mySource, blackPixels);
+            mySpeaker.updateFrequency(mySource, proximity);
         } else {
             mySpeaker.resetDetection();
         }
@@ -304,6 +275,7 @@ const char* category = distanceEstimator.getCategory(proximity);
         cv::imshow("Camera Feed", frame);
         cv::imshow("Grayscale", gray);
         cv::imshow("Thresholded Image", thresh);
+        cv::imshow("Warped Image", warpedImage);
 
         // Exit when user presses 'q'
         int key = (int)cv::waitKey(1) & 0xFF;
