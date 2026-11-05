@@ -1,7 +1,7 @@
 #include <iostream>
-#include <cstdlib> 
-#include <string> 
+#include <string>
 #include <vector>
+#include "AudioOutput.hpp"
 #include "DistanceEstimator.hpp"
 
 #if __has_include(<opencv2/opencv.hpp>)
@@ -11,53 +11,6 @@
 #else
 #define OPENCV_AVAILABLE 0
 #endif
-
-class AudioSource {
-private:
-    std::string filePath;
-public:
-    AudioSource(std::string path) {
-        filePath = path;
-    }
-    std::string getFilePath() {
-        return filePath;
-    }
-};
-
-class AudioOutput {
-private:
-    int frameCounter;
-public:
-    AudioOutput() {
-        frameCounter = 0;
-    }
-    void updateFrequency(AudioSource& source, int blackPixels) {
-        frameCounter++;
-        int framesToWait = -1;
-
-        if (blackPixels > 2000){
-            framesToWait = 2;
-        } 
-        else if (blackPixels > 1000){
-            framesToWait = 10;
-        }
-        else if (blackPixels > 500){
-            framesToWait = 30;
-        }
-        else if (blackPixels > 100){
-            framesToWait = 60;
-        }
-        if (framesToWait != -1 && frameCounter >= framesToWait) {
-            std::string command = "afplay " + source.getFilePath() + " &";
-            system(command.c_str());
-            frameCounter = 0;
-            std::cout << "Spelar ljud med dynamisk frekvens: " << source.getFilePath() << std::endl;
-        }
-    }
-    void resetDetection() {
-        frameCounter = 0;
-    }
-};
 
 #if OPENCV_AVAILABLE
 bool orderCorners(
@@ -165,7 +118,7 @@ int main() {
         );
 
         bool markerDetected = false;
-        int blackPixels = 0;
+        double proximity = 0.0;
         warpedImage = cv::Mat::zeros(400, 400, frame.type());
 
         // Find the first valid four-corner contour.
@@ -240,7 +193,7 @@ int main() {
             double markerArea = cv::contourArea(approximatedContour);
 
             // Estimate proximity using the distance estimator.
-            double proximity = distanceEstimator.estimateProximity(markerArea);
+            proximity = distanceEstimator.estimateProximity(markerArea);
             const char* category = distanceEstimator.getCategory(proximity);
 
             markerDetected = true;
@@ -288,8 +241,6 @@ int main() {
             cv::Mat isolatedMarkerPixels;
             
             cv::bitwise_and(thresh, mask, isolatedMarkerPixels);
-            blackPixels = cv::countNonZero(isolatedMarkerPixels);
-
             cv::imshow("Isolated Mask", isolatedMarkerPixels);// prof of concept, can be removed later
 
             break; 
@@ -297,7 +248,7 @@ int main() {
 
         if (markerDetected) {
             
-            mySpeaker.updateFrequency(mySource, blackPixels);
+            mySpeaker.updateFrequency(mySource, proximity);
         } else {
             mySpeaker.resetDetection();
         }
