@@ -172,8 +172,6 @@ if (!markerMatcher.loadTemplate("marker2.png.webp")) {
                 criteria
             );
 
-            // A quadrilateral is only a candidate; accept it only when its
-            // perspective-normalized image matches the Hiro template.
             if (!markerMatcher.matches(gray, corners)) {
                 continue;
             }
