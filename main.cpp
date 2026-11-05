@@ -7,7 +7,6 @@
 #if __has_include(<opencv2/opencv.hpp>)
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/geometry.hpp>
 #define OPENCV_AVAILABLE 1
 #else
 #define OPENCV_AVAILABLE 0
@@ -138,6 +137,7 @@ int main() {
 
     cv::Mat frame;
     cv::Mat gray, thresh;
+    cv::Mat warpedImage;
 
     AudioSource mySource("pipNoise.mp3");
     AudioOutput mySpeaker;
@@ -166,6 +166,7 @@ int main() {
 
         bool markerDetected = false;
         int blackPixels = 0;
+        warpedImage = cv::Mat::zeros(400, 400, frame.type());
 
         // Find the first valid four-corner contour.
         for (const std::vector<cv::Point>& contour : contours) {
@@ -208,6 +209,21 @@ int main() {
                 cv::Size(5, 5),
                 cv::Size(-1, -1),
                 criteria
+            );
+
+            const std::vector<cv::Point2f> warpedCorners = {
+                cv::Point2f(0.0f, 0.0f),
+                cv::Point2f(399.0f, 0.0f),
+                cv::Point2f(399.0f, 399.0f),
+                cv::Point2f(0.0f, 399.0f)
+            };
+            const cv::Mat perspectiveTransform =
+                cv::getPerspectiveTransform(corners, warpedCorners);
+            cv::warpPerspective(
+                frame,
+                warpedImage,
+                perspectiveTransform,
+                cv::Size(400, 400)
             );
 
             std::cout << "Detected corners:\n";
@@ -290,6 +306,7 @@ int main() {
         cv::imshow("Camera Feed", frame);
         cv::imshow("Grayscale", gray);
         cv::imshow("Thresholded Image", thresh);
+        cv::imshow("Warped Image", warpedImage);
 
         // Exit when user presses 'q'
         int key = (int)cv::waitKey(1) & 0xFF;
