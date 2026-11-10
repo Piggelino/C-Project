@@ -45,3 +45,16 @@ add_executable(distance_estimator_test
 target_include_directories(distance_estimator_test PRIVATE
     src/stuff
 )
+
+# Component tests for CornerDetector
+add_executable(corner_detector_test
+    tests/CornerDetectorTest.cpp
+    src/stuff/CornerDetector.cpp
+)
+
+target_include_directories(corner_detector_test PRIVATE
+    src/stuff
+    ${OpenCV_INCLUDE_DIRS}
+)
+
+target_link_libraries(corner_detector_test PRIVATE ${OpenCV_LIBS})
