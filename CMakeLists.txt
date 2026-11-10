@@ -35,3 +35,13 @@ target_link_libraries(camera_grab PRIVATE ${OpenCV_LIBS})
 if(WIN32)
     target_link_libraries(camera_grab PRIVATE winmm)
 endif()
+
+# Component tests for DistanceEstimator
+add_executable(distance_estimator_test
+    tests/DistanceEstimatorTest.cpp
+    src/stuff/DistanceEstimator.cpp
+)
+
+target_include_directories(distance_estimator_test PRIVATE
+    src/stuff
+)
