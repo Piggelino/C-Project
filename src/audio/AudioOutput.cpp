@@ -10,6 +10,7 @@
 #endif
 
 bool AudioOutput::playAudio(const std::string& filePath) {
+    // Only for windows
 #if defined(_WIN32)
     static unsigned int audioId = 0;
     const std::string alias = "camera_audio_" + std::to_string(++audioId);
