@@ -15,17 +15,21 @@ find_package(OpenCV CONFIG REQUIRED
 
 # Build all project source files.
 add_executable(camera_grab
-    main.cpp
-    CameraHandler.cpp
-    CornerDetector.cpp
-    AudioSource.cpp
-    AudioOutput.cpp
-    DistanceEstimator.cpp
-    MarkerTemplateMatcher.cpp
+    src/main.cpp
+    src/stuff/CameraHandler.cpp
+    src/stuff/CornerDetector.cpp
+    src/audio/AudioSource.cpp
+    src/audio/AudioOutput.cpp
+    src/stuff/DistanceEstimator.cpp
+    src/stuff/MarkerTemplateMatcher.cpp
 )
 
 # Give the program access to OpenCV headers and libraries.
-target_include_directories(camera_grab PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_include_directories(camera_grab PRIVATE
+    ${OpenCV_INCLUDE_DIRS}
+    src/audio
+    src/stuff
+)
 target_link_libraries(camera_grab PRIVATE ${OpenCV_LIBS})
 
 if(WIN32)

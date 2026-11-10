@@ -11,12 +11,12 @@
 #include "CornerDetector.hpp"
 
 CameraHandler::CameraHandler()
-    : mySource("pipNoise.mp3") {
+    : mySource("resources/pipNoise.mp3") {
 }
 
 void CameraHandler::run() {
 
-    // 1. Starta kameran
+    
     cv::VideoCapture cap(0);
 
     if (!cap.isOpened()) {
@@ -26,22 +26,21 @@ void CameraHandler::run() {
 
     std::cout << "Camera opened successfully. Press 'q' to quit." << std::endl;
 
-    // 2. Skapa bildvariabler
+   
     cv::Mat frame;
     cv::Mat gray, thresh;
     cv::Mat warpedImage;
 
-    // 3. Ladda Hiro-mallen
-    if (!markerMatcher.loadTemplate("marker2.png.webp")) {
+    
+    if (!markerMatcher.loadTemplate("resources/marker2.png.webp")) {
         std::cerr << "ERROR: Could not load Hiro template!" << std::endl;
         return;
     }
 
-    // 4. HÄR SKA DIN WHILE-LOOP BÖRJA
+   
     while (true) {
 
-        // Din befintliga kod från while-loopen placeras här.
-        // Grab a frame
+       
         if (!cap.read(frame)) {
             std::cerr << "ERROR: Could not read frame from camera!" << std::endl;
             break;
@@ -201,7 +200,7 @@ void CameraHandler::run() {
             mySpeaker.resetDetection();
         }
 
-        // Show the original camera image, grayscale image, and threshold image.
+        // the original camera image, grayscale image, and threshold image.
         cv::imshow("Camera Feed", frame);
         cv::imshow("Grayscale", gray);
         cv::imshow("Thresholded Image", thresh);
@@ -215,7 +214,6 @@ void CameraHandler::run() {
 
     }
 
-    // 5. Stäng kameran
     cap.release();
     cv::destroyAllWindows();
 
