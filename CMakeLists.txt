@@ -58,3 +58,17 @@ target_include_directories(corner_detector_test PRIVATE
 )
 
 target_link_libraries(corner_detector_test PRIVATE ${OpenCV_LIBS})
+
+
+# Component tests for MarkerTemplateMatcher
+add_executable(marker_template_matcher_test
+    tests/MarkerTemplateMatcherTest.cpp
+    src/stuff/MarkerTemplateMatcher.cpp
+)
+
+target_include_directories(marker_template_matcher_test PRIVATE
+    src/stuff
+    ${OpenCV_INCLUDE_DIRS}
+)
+
+target_link_libraries(marker_template_matcher_test PRIVATE ${OpenCV_LIBS})
