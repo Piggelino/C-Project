@@ -66,6 +66,32 @@ int main() {
          {{10,10}, {10,10}, {10,10}, {10,10}},
          false);
 
+
+    // Marker viewed from a moderate perspective angle
+    test("Perspective distortion",
+         {{20,20}, {110,35}, {90,100}, {30,85}},
+         true,
+         {{20,20}, {110,35}, {90,100}, {30,85}});
+
+    // Marker rotated slightly clockwise
+    test("Clockwise rotation",
+         {{40,10}, {100,40}, {70,100}, {10,70}},
+         true,
+         {{40,10}, {100,40}, {70,100}, {10,70}});
+
+    // Marker rotated slightly counterclockwise
+    test("Counterclockwise rotation",
+         {{10,40}, {70,10}, {100,70}, {40,100}},
+         true,
+         {{10,40}, {70,10}, {100,70}, {40,100}});
+
+    // Diamond-shaped marker rotated 45 degrees
+    test("45-degree rotation",
+         {{50,10}, {90,50}, {50,90}, {10,50}},
+         true,
+         {{50,10}, {90,50}, {50,90}, {10,50}});
+
+
     std::cout << "\nResults: " << passed << "/" << total
               << " tests passed.\n";
 
