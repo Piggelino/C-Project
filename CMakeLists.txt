@@ -84,3 +84,19 @@ target_include_directories(audio_source_test PRIVATE
     src/audio
 )
 
+
+# Component tests for AudioOutput
+add_executable(audio_output_test
+    tests/AudioOutputTest.cpp
+    src/audio/AudioSource.cpp
+    src/audio/AudioOutput.cpp
+)
+
+target_include_directories(audio_output_test PRIVATE
+    src/audio
+)
+
+if(WIN32)
+    target_link_libraries(audio_output_test PRIVATE winmm)
+endif()
+
