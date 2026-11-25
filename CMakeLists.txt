@@ -72,3 +72,15 @@ target_include_directories(marker_template_matcher_test PRIVATE
 )
 
 target_link_libraries(marker_template_matcher_test PRIVATE ${OpenCV_LIBS})
+
+
+# Component tests for AudioSource
+add_executable(audio_source_test
+    tests/AudioSourceTest.cpp
+    src/audio/AudioSource.cpp
+)
+
+target_include_directories(audio_source_test PRIVATE
+    src/audio
+)
+
