@@ -1,13 +1,12 @@
+
 #include "MarkerTemplateMatcher.hpp"
 
-
-#include <iostream>
 #include <algorithm>
 #include <opencv2/imgproc.hpp>
+
 #if __has_include(<opencv2/geometry/2d.hpp>)
 #include <opencv2/geometry/2d.hpp>
 #endif
-
 
 // Normalize a marker image for comparison.
 cv::Mat MarkerTemplateMatcher::normalize(const cv::Mat& image) {
@@ -19,15 +18,22 @@ cv::Mat MarkerTemplateMatcher::normalize(const cv::Mat& image) {
         gray = image.clone();
     }
 
-    cv::threshold(gray, binary, 0, 255,
-                  cv::THRESH_BINARY | cv::THRESH_OTSU);
+    cv::threshold(
+        gray,
+        binary,
+        0,
+        255,
+        cv::THRESH_BINARY | cv::THRESH_OTSU
+    );
 
     cv::resize(binary, binary, cv::Size(SIZE, SIZE));
+
     return binary;
 }
 
 // Load the reference Hiro marker.
 bool MarkerTemplateMatcher::loadTemplate(const std::string& path) {
+
     cv::Mat image = cv::imread(path, cv::IMREAD_GRAYSCALE);
 
     if (image.empty()) {
@@ -36,7 +42,14 @@ bool MarkerTemplateMatcher::loadTemplate(const std::string& path) {
 
     // Remove the white margins around the Hiro marker.
     cv::Mat blackMask;
-    cv::threshold(image, blackMask, 100, 255, cv::THRESH_BINARY_INV);
+
+    cv::threshold(
+        image,
+        blackMask,
+        100,
+        255,
+        cv::THRESH_BINARY_INV
+    );
 
     std::vector<cv::Point> blackPoints;
     cv::findNonZero(blackMask, blackPoints);
@@ -49,14 +62,22 @@ bool MarkerTemplateMatcher::loadTemplate(const std::string& path) {
 
     // Compare only the actual marker, without white margins.
     referencePattern = normalize(image(markerBounds));
+
     return true;
 }
 
 // Check whether a four-corner candidate matches Hiro.
 bool MarkerTemplateMatcher::matches(
     const cv::Mat& gray,
-    const std::vector<cv::Point2f>& corners
+    const std::vector<cv::Point2f>& corners,
+    double* similarityScore
 ) const {
+
+    // Optional diagnostic value for tests.
+    if (similarityScore) {
+        *similarityScore = 0.0;
+    }
+
     if (referencePattern.empty() || corners.size() != 4) {
         return false;
     }
@@ -72,28 +93,42 @@ bool MarkerTemplateMatcher::matches(
         cv::getPerspectiveTransform(corners, destination);
 
     cv::Mat warped;
-    cv::warpPerspective(gray, warped, transform,
-                        cv::Size(SIZE, SIZE));
+
+    cv::warpPerspective(
+        gray,
+        warped,
+        transform,
+        cv::Size(SIZE, SIZE)
+    );
 
     cv::Mat candidate = normalize(warped);
 
     // Check all four rotations.
     for (int rotation = 0; rotation < 4; ++rotation) {
+
         cv::Mat difference;
+
         cv::absdiff(candidate, referencePattern, difference);
 
         double similarity =
-            1.0 - static_cast<double>(cv::countNonZero(difference))
-                  / (SIZE * SIZE);
+            1.0 - static_cast<double>(
+                cv::countNonZero(difference)
+            ) / (SIZE * SIZE);
 
-        // DEBUG: Print the similarity score for each candidate.
-        std::cout << "Hiro similarity: " << similarity << std::endl;
+        if (similarityScore) {
+            *similarityScore =
+                std::max(*similarityScore, similarity);
+        }
 
         if (similarity >= 0.9) {
             return true;
         }
 
-        cv::rotate(candidate, candidate, cv::ROTATE_90_CLOCKWISE);
+        cv::rotate(
+            candidate,
+            candidate,
+            cv::ROTATE_90_CLOCKWISE
+        );
     }
 
     return false;

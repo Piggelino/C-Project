@@ -5,10 +5,10 @@
 #include <vector>
 #include <string>
 
-
 class MarkerTemplateMatcher {
 private:
     cv::Mat referencePattern;
+
     static constexpr int SIZE = 160;
 
     // Normalize a marker image for comparison.
@@ -19,6 +19,9 @@ public:
     bool loadTemplate(const std::string& path);
 
     // Check whether a four-corner candidate matches Hiro.
-    bool matches(const cv::Mat& gray,
-                 const std::vector<cv::Point2f>& corners) const;
+    bool matches(
+        const cv::Mat& gray,
+        const std::vector<cv::Point2f>& corners,
+        double* similarityScore = nullptr
+    ) const;
 };

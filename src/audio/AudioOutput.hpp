@@ -10,7 +10,13 @@ private:
     static bool playAudio(const std::string& filePath);
 
 public:
-    void updateFrequency(const AudioSource& source, double proximity);
+    // Calculate the playback interval without playing sound.
+    static int framesBetweenSounds(double proximity);
+
+    void updateFrequency(
+        const AudioSource& source,
+        double proximity
+    );
 
     void resetDetection();
 };

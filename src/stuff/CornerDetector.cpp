@@ -1,6 +1,10 @@
 #include "CornerDetector.hpp"
 
-bool orderCorners(
+#if __has_include(<opencv2/geometry/2d.hpp>)
+#include <opencv2/geometry/2d.hpp>
+#endif
+
+bool CornerDetector::orderCorners(
     const std::vector<cv::Point>& points,
     std::vector<cv::Point2f>& ordered
 ) {
@@ -57,4 +61,67 @@ bool orderCorners(
     };
 
     return true;
+}
+
+std::vector<CornerCandidate> CornerDetector::detectCorners(
+    const cv::Mat& gray,
+    const cv::Mat& thresh
+) {
+    std::vector<CornerCandidate> candidates;
+
+    // A contour is a line around a connected white area in the threshold image.
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(
+        thresh,
+        contours,
+        cv::RETR_EXTERNAL,
+        cv::CHAIN_APPROX_SIMPLE
+    );
+
+    for (const std::vector<cv::Point>& contour : contours) {
+        if (cv::contourArea(contour) < 500) {
+            continue;
+        }
+
+        std::vector<cv::Point> approximatedContour;
+        double epsilon = 0.02 * cv::arcLength(contour, true);
+        cv::approxPolyDP(
+            contour,
+            approximatedContour,
+            epsilon,
+            true
+        );
+
+        // Validate the marker candidate.
+        bool isConvex = approximatedContour.size() == 4 &&
+                        cv::isContourConvex(approximatedContour);
+
+        if (!isConvex) {
+            continue;
+        }
+
+        // Order and refine the marker corners.
+        std::vector<cv::Point2f> corners;
+        if (!orderCorners(approximatedContour, corners)) {
+            continue;
+        }
+
+        cv::TermCriteria criteria(
+            cv::TermCriteria::EPS | cv::TermCriteria::MAX_ITER,
+            40,
+            0.01
+        );
+
+        cv::cornerSubPix(
+            gray,
+            corners,
+            cv::Size(5, 5),
+            cv::Size(-1, -1),
+            criteria
+        );
+
+        candidates.push_back({approximatedContour, corners});
+    }
+
+    return candidates;
 }

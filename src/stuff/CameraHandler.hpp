@@ -1,10 +1,10 @@
 #pragma once
 
-#include <opencv2/opencv.hpp>
-
+#include "AudioSource.hpp"
 #include "AudioOutput.hpp"
 #include "DistanceEstimator.hpp"
 #include "MarkerTemplateMatcher.hpp"
+#include "CornerDetector.hpp"
 
 class CameraHandler {
 private:
@@ -12,6 +12,7 @@ private:
     AudioOutput mySpeaker;
     DistanceEstimator distanceEstimator;
     MarkerTemplateMatcher markerMatcher;
+    CornerDetector cornerDetector;
 
 public:
     CameraHandler();
