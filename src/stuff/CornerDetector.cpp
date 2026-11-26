@@ -1,9 +1,11 @@
 #include "CornerDetector.hpp"
+#include <algorithm>
+#include <cmath>
+#include <opencv2/imgproc.hpp>
 
 bool orderCorners(
     const std::vector<cv::Point>& points,
-    std::vector<cv::Point2f>& ordered
-) {
+    std::vector<cv::Point2f>& ordered) {
     if (points.size() != 4) {
         return false;
     }
