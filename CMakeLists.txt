@@ -22,6 +22,7 @@ add_executable(camera_grab
     src/audio/AudioOutput.cpp
     src/stuff/DistanceEstimator.cpp
     src/stuff/MarkerTemplateMatcher.cpp
+    src/stuff/RotationEstimator.cpp
 )
 
 # Give the program access to OpenCV headers and libraries.

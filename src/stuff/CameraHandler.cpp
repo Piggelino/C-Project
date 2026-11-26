@@ -1,14 +1,17 @@
 #include "CameraHandler.hpp"
 
+#include <opencv2/opencv.hpp>
+#include <algorithm>
+#include <cmath>
+#include <opencv2/imgproc.hpp>
+
+#if __has_include(<opencv2/geometry.hpp>)
+#include <opencv2/geometry.hpp>
+#endif
+
 #include <iostream>
 #include <string>
 #include <vector>
-#include <algorithm>
-#if __has_include(<opencv2/geometry/2d.hpp>)
-#include <opencv2/geometry/2d.hpp>
-#endif
-
-#include "CornerDetector.hpp"
 
 CameraHandler::CameraHandler()
     : mySource("resources/pipNoise.mp3") {
@@ -16,206 +19,402 @@ CameraHandler::CameraHandler()
 
 void CameraHandler::run() {
 
-    
+    if (!markerMatcher.loadTemplates("resources")) {
+
+        std::cerr
+            << "ERROR: Could not load Hiro templates!\n";
+
+        return;
+    }
+
     cv::VideoCapture cap(0);
 
     if (!cap.isOpened()) {
-        std::cerr << "ERROR: Could not open camera!" << std::endl;
+
+        std::cerr
+            << "ERROR: Could not open camera!\n";
+
         return;
     }
 
-    std::cout << "Camera opened successfully. Press 'q' to quit." << std::endl;
+    std::cout
+        << "Press q to quit, s to save evidence.\n";
 
-   
-    cv::Mat frame;
-    cv::Mat gray, thresh;
-    cv::Mat warpedImage;
+    cv::Mat frame, gray, thresh;
 
-    
-    if (!markerMatcher.loadTemplate("resources/marker2.png.webp")) {
-        std::cerr << "ERROR: Could not load Hiro template!" << std::endl;
-        return;
-    }
+    unsigned long frameNumber = 0;
 
-   
-    while (true) {
+    while (cap.read(frame) && !frame.empty()) {
 
-       
-        if (!cap.read(frame)) {
-            std::cerr << "ERROR: Could not read frame from camera!" << std::endl;
-            break;
-        }
+        ++frameNumber;
 
-        // Convert to grayscale
-        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-        // Apply Thresholding
-        cv::threshold(gray, thresh, 80, 255, cv::THRESH_BINARY_INV);
-
-        // A contour is a line around a connected white area in the threshold image.
-        std::vector<std::vector<cv::Point>> contours;
-        cv::findContours(
-            thresh,
-            contours,
-            cv::RETR_EXTERNAL,
-            cv::CHAIN_APPROX_SIMPLE
+        cv::cvtColor(
+            frame,
+            gray,
+            cv::COLOR_BGR2GRAY
         );
 
-        bool markerDetected = false;
-        double proximity = 0.0;
-        warpedImage = cv::Mat::zeros(400, 400, frame.type());
+        cv::threshold(
+            gray,
+            thresh,
+            80,
+            255,
+            cv::THRESH_BINARY_INV
+        );
 
-        // Find the first valid four-corner contour.
-        for (const std::vector<cv::Point>& contour : contours) {
-            if (cv::contourArea(contour) < 500) {
-                continue;
-            }
+        // Preserve the original frame.
+        cv::Mat display = frame.clone();
 
-            std::vector<cv::Point> approximatedContour;
-            double epsilon = 0.02 * cv::arcLength(contour, true);
-            cv::approxPolyDP(
-                contour,
-                approximatedContour,
-                epsilon,
-                true
+        cv::Mat candidateView = cv::Mat::zeros(
+            160,
+            160,
+            CV_8UC1
+        );
+
+        cv::Mat warpedImage = cv::Mat::zeros(
+            400,
+            400,
+            frame.type()
+        );
+
+        cv::Mat isolatedMarkerPixels =
+            cv::Mat::zeros(
+                thresh.size(),
+                CV_8UC1
             );
 
-            // Validate the marker candidate.
-            bool isConvex = approximatedContour.size() == 4 &&
-                            cv::isContourConvex(approximatedContour);
-
-            if (!isConvex) {
-                continue;
-            }
-
-            // Order and refine the marker corners.
-            std::vector<cv::Point2f> corners;
-            if (!orderCorners(approximatedContour, corners)) {
-                continue;
-            }
-
-            cv::TermCriteria criteria(
-                cv::TermCriteria::EPS | cv::TermCriteria::MAX_ITER,
-                40,
-                0.01
-            );
-
-            cv::cornerSubPix(
+        // Detect possible markers.
+        const auto candidates =
+            cornerDetector.detectCorners(
                 gray,
-                corners,
-                cv::Size(5, 5),
-                cv::Size(-1, -1),
-                criteria
+                thresh
             );
 
-            if (!markerMatcher.matches(gray, corners)) {
-                continue;
-            }
+        int selected = -1;
 
-            const std::vector<cv::Point2f> warpedCorners = {
-                cv::Point2f(0.0f, 0.0f),
-                cv::Point2f(399.0f, 0.0f),
-                cv::Point2f(399.0f, 399.0f),
-                cv::Point2f(0.0f, 399.0f)
-            };
-            const cv::Mat perspectiveTransform =
-                cv::getPerspectiveTransform(corners, warpedCorners);
-            cv::warpPerspective(
-                frame,
-                warpedImage,
-                perspectiveTransform,
-                cv::Size(400, 400)
-            );
+        MarkerMatchResult best;
 
-            std::cout << "Detected corners:\n";
-            std::cout << "  Top-left:     (" << corners[0].x << ", "
-                      << corners[0].y << ")\n";
-            std::cout << "  Top-right:    (" << corners[1].x << ", "
-                      << corners[1].y << ")\n";
-            std::cout << "  Bottom-right: (" << corners[2].x << ", "
-                      << corners[2].y << ")\n";
-            std::cout << "  Bottom-left:  (" << corners[3].x << ", "
-                      << corners[3].y << ")\n";
+        best.reason = "No geometric candidate";
 
-            // Measure the marker's area in square pixels.
-            double markerArea = cv::contourArea(approximatedContour);
+        // Evaluate every candidate.
+        for (std::size_t i = 0;
+             i < candidates.size();
+             ++i) {
 
-            // Estimate proximity using the distance estimator.
-            proximity = distanceEstimator.estimateProximity(markerArea);
-            const char* category = distanceEstimator.getCategory(proximity);
+            const auto& candidate =
+                candidates[i];
 
-            markerDetected = true;
-
-            // Draw the refined marker outline.
-            std::vector<cv::Point> displayCorners;
-            for (const cv::Point2f& corner : corners) {
-                displayCorners.emplace_back(
-                    cvRound(corner.x),
-                    cvRound(corner.y)
+            MarkerMatchResult match =
+                markerMatcher.recognize(
+                    gray,
+                    candidate.corners
                 );
-            }
 
+            // Green: recognized marker.
+            // Red: rejected geometric candidate.
             cv::polylines(
-                frame,
-                displayCorners,
+                display,
+                candidate.contour,
                 true,
-                cv::Scalar(0, 255, 0),
-                3
-            );
-
-            // Display proximity and area on the camera feed.
-            std::string label =
-                std::string(category) + " | " +
-                std::to_string(static_cast<int>(proximity * 100)) + "% | Area: " +
-                std::to_string(static_cast<int>(markerArea)) + " px2";
-
-            cv::Rect box = cv::boundingRect(approximatedContour);
-            cv::Point textPosition(box.x, std::max(25, box.y - 10));
-
-            cv::putText(
-                frame,
-                label,
-                textPosition,
-                cv::FONT_HERSHEY_SIMPLEX,
-                0.7,
-                cv::Scalar(0, 255, 0),
+                match.matched
+                    ? cv::Scalar(0, 255, 0)
+                    : cv::Scalar(0, 0, 255),
                 2
             );
 
-            cv::Mat mask = cv::Mat::zeros(thresh.size(), CV_8UC1);
-            std::vector<std::vector<cv::Point>> maskContour = {displayCorners};
-            cv::drawContours(mask, maskContour, 0, cv::Scalar(255), cv::FILLED);
+            // Prefer a recognized marker.
+            // Otherwise retain the best rejected one.
+            if (selected < 0 ||
+                (match.matched && !best.matched) ||
+                (match.matched == best.matched &&
+                 match.similarity > best.similarity)) {
 
-            cv::Mat isolatedMarkerPixels;
-            
-            cv::bitwise_and(thresh, mask, isolatedMarkerPixels);
-            cv::imshow("Isolated Mask", isolatedMarkerPixels);// prof of concept, can be removed later
-
-            break; 
+                selected = static_cast<int>(i);
+                best = match;
+            }
         }
 
+        if (!best.normalizedCandidate.empty()) {
+
+            candidateView =
+                best.normalizedCandidate;
+        }
+
+        bool markerDetected = false;
+
+        double proximity = 0.0;
+        double rotation = 0.0;
+
+        if (selected >= 0 && best.matched) {
+
+            const auto& candidate =
+                candidates[selected];
+
+            auto corners = candidate.corners;
+
+            // Restore physical corner correspondence.
+            if (rotationEstimator.correctCornerOrder(
+                    corners,
+                    best.rotationIndex
+                )) {
+
+                rotation =
+                    rotationEstimator.estimateRotation(
+                        corners
+                    );
+
+                // Create an upright marker image.
+                cv::Mat upright =
+                    markerMatcher.rectify(
+                        frame,
+                        corners,
+                        400
+                    );
+
+                if (std::isfinite(rotation) &&
+                    !upright.empty()) {
+
+                    markerDetected = true;
+
+                    warpedImage = upright;
+
+                    double area = cv::contourArea(
+                        candidate.contour
+                    );
+
+                    proximity =
+                        distanceEstimator.estimateProximity(
+                            area
+                        );
+
+                    std::vector<cv::Point> points;
+
+                    for (const auto& p : corners) {
+
+                        points.emplace_back(
+                            cvRound(p.x),
+                            cvRound(p.y)
+                        );
+                    }
+
+                    // Draw recognized marker.
+                    cv::polylines(
+                        display,
+                        points,
+                        true,
+                        cv::Scalar(0, 255, 0),
+                        3
+                    );
+
+                    // Draw the physical A-B edge.
+                    cv::arrowedLine(
+                        display,
+                        points[0],
+                        points[1],
+                        cv::Scalar(255, 0, 0),
+                        3
+                    );
+
+                    // Label the physical corners.
+                    for (int i = 0; i < 4; ++i) {
+
+                        cv::circle(
+                            display,
+                            points[i],
+                            5,
+                            cv::Scalar(0, 0, 255),
+                            cv::FILLED
+                        );
+
+                        cv::putText(
+                            display,
+                            std::string(
+                                1,
+                                static_cast<char>('A' + i)
+                            ),
+                            points[i] + cv::Point(8, -8),
+                            cv::FONT_HERSHEY_SIMPLEX,
+                            0.7,
+                            cv::Scalar(0, 255, 255),
+                            2
+                        );
+                    }
+
+                    std::string label =
+                        best.id + " | " +
+                        distanceEstimator.getCategory(
+                            proximity
+                        ) + " | " +
+                        std::to_string(
+                            static_cast<int>(
+                                proximity * 100
+                            )
+                        ) + "% | " +
+                        std::to_string(
+                            static_cast<int>(rotation)
+                        ) + " deg";
+
+                    cv::Rect box = cv::boundingRect(
+                        candidate.contour
+                    );
+
+                    cv::putText(
+                        display,
+                        label,
+                        {
+                            box.x,
+                            std::max(25, box.y - 10)
+                        },
+                        cv::FONT_HERSHEY_SIMPLEX,
+                        0.6,
+                        cv::Scalar(0, 255, 0),
+                        2
+                    );
+
+                    // Isolate the accepted marker.
+                    cv::Mat mask = cv::Mat::zeros(
+                        thresh.size(),
+                        CV_8UC1
+                    );
+
+                    cv::drawContours(
+                        mask,
+                        std::vector<
+                            std::vector<cv::Point>
+                        >{points},
+                        0,
+                        cv::Scalar(255),
+                        cv::FILLED
+                    );
+
+                    cv::bitwise_and(
+                        thresh,
+                        mask,
+                        isolatedMarkerPixels
+                    );
+                }
+            }
+        }
+
+        // Update sound only for valid markers.
         if (markerDetected) {
-            
-            mySpeaker.updateFrequency(mySource, proximity);
+
+            mySpeaker.updateFrequency(
+                mySource,
+                proximity,
+                rotation
+            );
+
         } else {
+
             mySpeaker.resetDetection();
         }
 
-        // the original camera image, grayscale image, and threshold image.
-        cv::imshow("Camera Feed", frame);
+        // Explain why recognition failed.
+        if (!markerDetected) {
+
+            cv::putText(
+                display,
+                best.matched
+                    ? "Invalid rotation/rectification"
+                    : best.reason,
+                {10, 25},
+                cv::FONT_HERSHEY_SIMPLEX,
+                0.6,
+                cv::Scalar(0, 0, 255),
+                2
+            );
+        }
+
+        // Show the processing stages.
+        cv::imshow("Camera Feed", display);
         cv::imshow("Grayscale", gray);
         cv::imshow("Thresholded Image", thresh);
+        cv::imshow("Recognition Candidate", candidateView);
         cv::imshow("Warped Image", warpedImage);
+        cv::imshow("Isolated Mask", isolatedMarkerPixels);
 
-        // Exit when user presses 'q'
-        int key = (int)cv::waitKey(1) & 0xFF;
+        int key = cv::waitKey(1) & 0xFF;
+
         if (key == 'q' || key == 'Q') {
             break;
         }
 
+        // Print diagnostic information.
+        if (frameNumber % 30 == 0 ||
+            key == 's' ||
+            key == 'S') {
+
+            std::cout
+                << "Frame " << frameNumber
+                << " | candidates: "
+                << candidates.size()
+                << " | " << best.reason
+                << '\n';
+
+            for (int i = 0; i < 4; ++i) {
+
+                std::cout
+                    << i * 90 << " deg: "
+                    << best.scores[i]
+                    << '\n';
+            }
+
+            std::cout
+                << "Best: " << best.similarity
+                << " | margin: " << best.margin
+                << " | detected: "
+                << std::boolalpha
+                << markerDetected;
+
+            if (markerDetected) {
+
+                std::cout
+                    << " | angle: "
+                    << rotation;
+            }
+
+            std::cout << '\n';
+        }
+
+        // Save repeatable test evidence.
+        if (key == 's' || key == 'S') {
+
+            std::string prefix =
+                "evidence_" +
+                std::to_string(frameNumber);
+
+            bool saved = cv::imwrite(
+                prefix + "_original.png",
+                frame
+            );
+
+            saved = cv::imwrite(
+                prefix + "_threshold.png",
+                thresh
+            ) && saved;
+
+            saved = cv::imwrite(
+                prefix + "_candidate.png",
+                candidateView
+            ) && saved;
+
+            saved = cv::imwrite(
+                prefix + "_overlay.png",
+                display
+            ) && saved;
+
+            std::cout
+                << (saved
+                    ? "Evidence saved: "
+                    : "Evidence save failed: ")
+                << prefix << '\n';
+        }
     }
 
-    cap.release();
-    cv::destroyAllWindows();
+    mySpeaker.resetDetection();
 
-    std::cout << "Camera closed. Program finished." << std::endl;
+    cap.release();
+
+    cv::destroyAllWindows();
 }
