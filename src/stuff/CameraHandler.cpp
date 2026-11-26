@@ -14,7 +14,14 @@
 #include <string>
 #include <vector>
 
-CameraHandler::CameraHandler(): mySource("resources/pipNoise.mp3") {}
+CameraHandler::CameraHandler()
+    : soundSources{
+        AudioSource("resources/pipNoise.mp3"),
+        AudioSource("resources/pipNoise2.mp3"),
+        AudioSource("resources/pipNoise3.mp3"),
+        AudioSource("resources/pipNoise4.mp3")
+    } {
+}
 
 void CameraHandler::run() {
 
@@ -319,6 +326,19 @@ void CameraHandler::run() {
         // Only a new valid recognition refreshes the saved detection.
         const auto now = Clock::now();
 
+        std::size_t soundIndex = 0;
+        // Update sound only for valid markers.
+        if (markerDetected &&
+            best.rotationIndex >= 0 &&
+            best.rotationIndex <
+                static_cast<int>(soundSources.size())) {
+
+            soundIndex =
+                static_cast<std::size_t>(
+                    best.rotationIndex
+                );
+        }
+
         if (markerDetected) {
             ++acceptedFrames;
             hasPreviousDetection = true;
@@ -333,9 +353,8 @@ void CameraHandler::run() {
 
         if (markerDetected || holdingDetection) {
             mySpeaker.updateFrequency(
-                mySource,
-                lastProximity,
-                lastRotation
+                soundSources[soundIndex],
+                proximity
             );
         } else {
             hasPreviousDetection = false;
