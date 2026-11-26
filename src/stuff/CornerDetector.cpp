@@ -8,10 +8,7 @@
 #include <opencv2/geometry.hpp>
 #endif
 
-bool orderCorners(
-    const std::vector<cv::Point>& points,
-    std::vector<cv::Point2f>& ordered
-) {
+bool orderCorners(const std::vector<cv::Point>& points, std::vector<cv::Point2f>& ordered) {
     ordered.clear();
 
     if (points.size() != 4) {
@@ -56,7 +53,6 @@ bool orderCorners(
             ordered.end()
         );
     }
-
     // Select a temporary geometric starting corner.
     const auto first = std::min_element(
         ordered.begin(),
@@ -65,9 +61,11 @@ bool orderCorners(
             float sa = a.x + a.y;
             float sb = b.x + b.y;
 
-            return sa == sb
-                ? a.y < b.y
-                : sa < sb;
+            if (sa == sb) {
+                return a.y < b.y;
+            } else {
+                return sa < sb;
+            }
         }
     );
 
@@ -131,17 +129,30 @@ std::vector<CornerCandidate> CornerDetector::detectCorners(
 
         std::vector<cv::Point> polygon;
 
-        cv::approxPolyDP(
-            contour,
-            polygon,
-            0.02 * cv::arcLength(contour, true),
-            true
-        );
+        // Try the original approximation first, then slightly different
+        // tolerances before falling back to the convex hull.
+        const auto approximateSquare = [&polygon](const std::vector<cv::Point>& points) {
+            const double perimeter = cv::arcLength(points, true);
 
-        if (polygon.size() != 4 ||
-            !cv::isContourConvex(polygon)) {
+            for (double epsilon : {0.02, 0.015, 0.03, 0.04}) {
+                cv::approxPolyDP(
+                    points, polygon, epsilon * perimeter, true
+                );
 
-            continue;
+                if (polygon.size() == 4 && cv::isContourConvex(polygon)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        if (!approximateSquare(contour)) {
+            std::vector<cv::Point> hull;
+            cv::convexHull(contour, hull);
+
+            if (!approximateSquare(hull)) {
+                continue;
+            }
         }
 
         std::vector<cv::Point2f> corners;
@@ -167,10 +178,11 @@ std::vector<CornerCandidate> CornerDetector::detectCorners(
             continue;
         }
 
-        // Refine the corner positions.
+        // Refine a copy so a bad refinement does not discard good corners.
+        auto refined = corners;
         cv::cornerSubPix(
             gray,
-            corners,
+            refined,
             cv::Size(5, 5),
             cv::Size(-1, -1),
             cv::TermCriteria(
@@ -181,25 +193,30 @@ std::vector<CornerCandidate> CornerDetector::detectCorners(
             )
         );
 
-        // Validate the refined corners.
-        for (const auto& p : corners) {
-            if (!std::isfinite(p.x) ||
-                !std::isfinite(p.y) ||
-                p.x < 0 ||
-                p.y < 0 ||
-                p.x >= gray.cols ||
-                p.y >= gray.rows) {
+        // Limit refinement displacement to preserve the corner correspondence.
+        double shortestSide = cv::norm(corners[1] - corners[0]);
+        for (int j = 0; j < 4; ++j) {
+            shortestSide = std::min(shortestSide,
+                cv::norm(corners[(j + 1) % 4] - corners[j]));
+        }
+        const double maxShift = std::min(5.0, shortestSide * 0.10);
 
+        for (int j = 0; j < 4; ++j) {
+            const auto& p = refined[j];
+            if (!std::isfinite(p.x) || !std::isfinite(p.y) ||
+                p.x < 0 || p.y < 0 ||
+                p.x >= gray.cols || p.y >= gray.rows ||
+                cv::norm(p - corners[j]) > maxShift) {
                 valid = false;
+                break;
             }
         }
 
-        if (!valid ||
-            !cv::isContourConvex(corners) ||
-            cv::contourArea(corners, true) <= 1.0) {
-
-            continue;
+        if (valid && cv::isContourConvex(refined) &&
+            cv::contourArea(refined, true) > 1.0) {
+            corners = refined;
         }
+        // Otherwise retain the original four geometric corners.
 
         candidates.push_back({
             polygon,

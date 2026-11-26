@@ -12,19 +12,13 @@
 cv::Mat MarkerTemplateMatcher::normalize(
     const cv::Mat& image
 ) {
-    if (image.empty() ||
-        image.type() != CV_8UC1) {
-
+    if (image.empty() || image.type() != CV_8UC1) {
         return {};
     }
 
     cv::Mat resized, binary;
 
-    cv::resize(
-        image,
-        resized,
-        cv::Size(SIZE, SIZE)
-    );
+    cv::resize(image, resized, cv::Size(SIZE, SIZE));
 
     cv::threshold(
         resized,
@@ -37,13 +31,8 @@ cv::Mat MarkerTemplateMatcher::normalize(
     return binary;
 }
 
-cv::Mat MarkerTemplateMatcher::loadPattern(
-    const std::string& path
-) {
-    cv::Mat image = cv::imread(
-        path,
-        cv::IMREAD_GRAYSCALE
-    );
+cv::Mat MarkerTemplateMatcher::loadPattern(const std::string& path) {
+    cv::Mat image = cv::imread( path, cv::IMREAD_GRAYSCALE);
 
     if (image.empty()) {
         return {};
@@ -234,7 +223,7 @@ cv::Mat MarkerTemplateMatcher::extractInterior(
     const cv::Mat& image
 ) {
     const int m = static_cast<int>(
-        image.cols * 0.15
+        image.cols * 0.25
     );
 
     return image(
@@ -253,28 +242,21 @@ bool MarkerTemplateMatcher::hasBlackBorder(
 ) {
     const int n = image.cols;
 
-    const int offset = n / 50;
-    const int w = n / 20;
+    // Sample safely inside the thick border, away from the outer edge.
+    const int offset = n / 20;
+    const int w = n / 12;
 
     const int span = n - 2 * offset;
 
     const std::array<cv::Rect, 4> strips = {
 
-        cv::Rect(
-            offset, offset, span, w
-        ),
+        cv::Rect(offset, offset, span, w),
 
-        cv::Rect(
-            offset, n - offset - w, span, w
-        ),
+        cv::Rect(offset, n - offset - w, span, w),
 
-        cv::Rect(
-            offset, offset, w, span
-        ),
+        cv::Rect(offset, offset, w, span),
 
-        cv::Rect(
-            n - offset - w, offset, w, span
-        )
+        cv::Rect( n - offset - w, offset, w, span )
     };
 
     for (const auto& strip : strips) {
@@ -294,17 +276,36 @@ bool MarkerTemplateMatcher::hasBlackBorder(
     return true;
 }
 
-// Compare the same interior area of both images.
+// Search for the reference interior within a slightly larger region.
 double MarkerTemplateMatcher::compare(
     const cv::Mat& candidate,
     const cv::Mat& reference
 ) {
-    cv::Mat a = extractInterior(candidate);
-    cv::Mat b = extractInterior(reference);
+    const cv::Mat pattern = extractInterior(reference);
+    const int margin = static_cast<int>(candidate.cols * 0.20);
 
-    return 1.0 -
-        cv::norm(a, b, cv::NORM_L1) /
-        (255.0 * a.total());
+    const cv::Mat searchArea = candidate(cv::Rect(
+        margin, margin,
+        candidate.cols - 2 * margin,
+        candidate.rows - 2 * margin
+    ));
+
+    // Normalized correlation needs a non-constant reference pattern.
+    const int white = cv::countNonZero(pattern);
+    if (white == 0 || static_cast<std::size_t>(white) == pattern.total()) {
+        return -1.0;
+    }
+
+    cv::Mat scores;
+    cv::matchTemplate(searchArea, pattern, scores, cv::TM_CCOEFF_NORMED);
+
+    double bestScore;
+    cv::minMaxLoc(scores, nullptr, &bestScore);
+    if (std::isfinite(bestScore)) {
+        return bestScore;
+    } else {
+        return -1.0;
+    }
 }
 
 // Recognize Hiro and recover its orientation.
@@ -318,8 +319,7 @@ MarkerMatchResult MarkerTemplateMatcher::recognize(
 
         if (pattern.empty()) {
 
-            result.reason =
-                "Templates not loaded";
+            result.reason = "Templates not loaded";
 
             return result;
         }
@@ -334,13 +334,9 @@ MarkerMatchResult MarkerTemplateMatcher::recognize(
     cv::Mat candidate = normalize(warped);
 
     if (candidate.empty()) {
-
-        result.reason =
-            "Invalid rectification";
-
+        result.reason = "Invalid rectification";
         return result;
     }
-
     result.normalizedCandidate = candidate;
 
     double best = -1.0;
@@ -350,7 +346,6 @@ MarkerMatchResult MarkerTemplateMatcher::recognize(
 
     // Compare all four reference images.
     for (int i = 0; i < 4; ++i) {
-
         double score = compare(
             candidate,
             referencePatterns[i]
@@ -359,13 +354,11 @@ MarkerMatchResult MarkerTemplateMatcher::recognize(
         result.scores[i] = score;
 
         if (score > best) {
-
             second = best;
             best = score;
             bestIndex = i;
 
         } else if (score > second) {
-
             second = score;
         }
     }
@@ -395,23 +388,16 @@ MarkerMatchResult MarkerTemplateMatcher::recognize(
         white < 0.05 ||
         white > 0.95) {
 
-        result.reason =
-            "Low contrast or missing pattern";
+        result.reason = "Low contrast or missing pattern";
 
     } else if (!hasBlackBorder(candidate)) {
+        result.reason = "Invalid black border";
 
-        result.reason =
-            "Invalid black border";
+    } else if (best < 0.75) {
+        result.reason = "Similarity too low";
 
-    } else if (best < 0.90) {
-
-        result.reason =
-            "Similarity too low";
-
-    } else if (result.margin < 0.02) {
-
-        result.reason =
-            "Ambiguous orientation";
+    } else if (result.margin < 0.04) {
+        result.reason = "Ambiguous orientation";
 
     } else {
 

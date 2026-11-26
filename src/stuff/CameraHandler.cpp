@@ -3,6 +3,7 @@
 #include <opencv2/opencv.hpp>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <opencv2/imgproc.hpp>
 
 #if __has_include(<opencv2/geometry.hpp>)
@@ -13,9 +14,7 @@
 #include <string>
 #include <vector>
 
-CameraHandler::CameraHandler()
-    : mySource("resources/pipNoise.mp3") {
-}
+CameraHandler::CameraHandler(): mySource("resources/pipNoise.mp3") {}
 
 void CameraHandler::run() {
 
@@ -40,9 +39,23 @@ void CameraHandler::run() {
     std::cout
         << "Press q to quit, s to save evidence.\n";
 
-    cv::Mat frame, gray, thresh;
+    cv::Mat frame, gray, blurred, thresh;
+
+    const cv::Mat kernel = cv::getStructuringElement(
+        cv::MORPH_RECT, cv::Size(3, 3)
+    );
+
+    // Keep the last valid detection briefly if recognition drops out.
+    using Clock = std::chrono::steady_clock;
+    constexpr auto holdTime = std::chrono::milliseconds(200);
+    bool hasPreviousDetection = false;
+    Clock::time_point lastDetection;
+    double lastProximity = 0.0;
+    double lastRotation = 0.0;
+    std::vector<cv::Point> lastCorners;
 
     unsigned long frameNumber = 0;
+    unsigned long acceptedFrames = 0;
 
     while (cap.read(frame) && !frame.empty()) {
 
@@ -54,22 +67,24 @@ void CameraHandler::run() {
             cv::COLOR_BGR2GRAY
         );
 
+        // Reduce noise and select the threshold from the current frame.
+        cv::GaussianBlur(gray, blurred, cv::Size(3, 3), 0);
+
         cv::threshold(
-            gray,
+            blurred,
             thresh,
-            80,
+            0,
             255,
-            cv::THRESH_BINARY_INV
+            cv::THRESH_BINARY_INV | cv::THRESH_OTSU
         );
+
+        // Close small gaps in the inverted black marker border.
+        cv::morphologyEx(thresh, thresh, cv::MORPH_CLOSE, kernel);
 
         // Preserve the original frame.
         cv::Mat display = frame.clone();
 
-        cv::Mat candidateView = cv::Mat::zeros(
-            160,
-            160,
-            CV_8UC1
-        );
+        cv::Mat candidateView = cv::Mat::zeros(160, 160, CV_8UC1);
 
         cv::Mat warpedImage = cv::Mat::zeros(
             400,
@@ -112,13 +127,19 @@ void CameraHandler::run() {
 
             // Green: recognized marker.
             // Red: rejected geometric candidate.
+            cv::Scalar contourColor;
+
+            if (match.matched) {
+                contourColor = cv::Scalar(0, 255, 0);
+            } else {
+                contourColor = cv::Scalar(0, 0, 255);
+            }
+
             cv::polylines(
                 display,
                 candidate.contour,
                 true,
-                match.matched
-                    ? cv::Scalar(0, 255, 0)
-                    : cv::Scalar(0, 0, 255),
+                contourColor,
                 2
             );
 
@@ -182,10 +203,7 @@ void CameraHandler::run() {
                         candidate.contour
                     );
 
-                    proximity =
-                        distanceEstimator.estimateProximity(
-                            area
-                        );
+                    proximity = distanceEstimator.estimateProximity(area);
 
                     std::vector<cv::Point> points;
 
@@ -196,6 +214,8 @@ void CameraHandler::run() {
                             cvRound(p.y)
                         );
                     }
+
+                    lastCorners = points;
 
                     // Draw recognized marker.
                     cv::polylines(
@@ -296,28 +316,56 @@ void CameraHandler::run() {
             }
         }
 
-        // Update sound only for valid markers.
-        if (markerDetected) {
+        // Only a new valid recognition refreshes the saved detection.
+        const auto now = Clock::now();
 
+        if (markerDetected) {
+            ++acceptedFrames;
+            hasPreviousDetection = true;
+            lastDetection = now;
+            lastProximity = proximity;
+            lastRotation = rotation;
+        }
+
+        // Tolerate a short dropout, but never refresh the timeout on a miss.
+        const bool holdingDetection = !markerDetected &&
+            hasPreviousDetection && now - lastDetection <= holdTime;
+
+        if (markerDetected || holdingDetection) {
             mySpeaker.updateFrequency(
                 mySource,
-                proximity,
-                rotation
+                lastProximity,
+                lastRotation
             );
-
         } else {
-
+            hasPreviousDetection = false;
+            lastCorners.clear();
             mySpeaker.resetDetection();
+        }
+
+        // Yellow means last known position, not a fresh recognition.
+        if (holdingDetection) {
+            cv::polylines(
+                display, lastCorners, true, cv::Scalar(0, 255, 255), 3
+            );
         }
 
         // Explain why recognition failed.
         if (!markerDetected) {
 
+            std::string message;
+
+            if (best.matched) {
+                message = "Invalid rotation/rectification";
+            } else if (holdingDetection) {
+                message = "Holding: " + best.reason;
+            } else {
+                message = best.reason;
+            }
+
             cv::putText(
                 display,
-                best.matched
-                    ? "Invalid rotation/rectification"
-                    : best.reason,
+                message,
                 {10, 25},
                 cv::FONT_HERSHEY_SIMPLEX,
                 0.6,
@@ -365,7 +413,10 @@ void CameraHandler::run() {
                 << " | margin: " << best.margin
                 << " | detected: "
                 << std::boolalpha
-                << markerDetected;
+                << markerDetected
+                 << " | holding: " << holdingDetection
+                 << " | accepted frames: " << acceptedFrames
+                 << "/" << frameNumber;
 
             if (markerDetected) {
 
@@ -404,11 +455,11 @@ void CameraHandler::run() {
                 display
             ) && saved;
 
-            std::cout
-                << (saved
-                    ? "Evidence saved: "
-                    : "Evidence save failed: ")
-                << prefix << '\n';
+            if (saved) {
+                std::cout << "Evidence saved: " << prefix << '\n';
+            } else {
+                std::cout << "Evidence save failed: " << prefix << '\n';
+            }
         }
     }
 
