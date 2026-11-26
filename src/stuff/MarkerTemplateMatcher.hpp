@@ -1,7 +1,7 @@
 #pragma once
 
-#include <opencv2/core.hpp>
 #include <array>
+#include <opencv2/core.hpp>
 #include <string>
 #include <vector>
 
@@ -29,49 +29,16 @@ private:
 
     std::array<cv::Mat, 4> referencePatterns;
 
-    static cv::Mat normalize(
-        const cv::Mat& image
-    );
-
-    static cv::Mat loadPattern(
-        const std::string& path
-    );
-
-    static cv::Mat extractInterior(
-        const cv::Mat& image
-    );
-
-    static bool hasBlackBorder(
-        const cv::Mat& image
-    );
-
-    static double compare(
-        const cv::Mat& candidate,
-        const cv::Mat& reference
-    );
+    static cv::Mat normalize(const cv::Mat& image);
+    static cv::Mat loadPattern(const std::string& path);
+    static cv::Mat extractInterior(const cv::Mat& image);
+    static bool hasBlackBorder(const cv::Mat& image);
+    static double compare(const cv::Mat& candidate, const cv::Mat& reference);
 
 public:
-    bool loadTemplates(
-        const std::string& directory
-    );
-
-    bool loadTemplate(
-        const std::string& path
-    );
-
-    static cv::Mat rectify(
-        const cv::Mat& image,
-        const std::vector<cv::Point2f>& corners,
-        int size
-    );
-
-    MarkerMatchResult recognize(
-        const cv::Mat& gray,
-        const std::vector<cv::Point2f>& corners
-    ) const;
-
-    bool matches(
-        const cv::Mat& gray,
-        const std::vector<cv::Point2f>& corners
-    ) const;
+    bool loadTemplates(const std::string& directory);
+    bool loadTemplate(const std::string& path);
+    static cv::Mat rectify(const cv::Mat& image, const std::vector<cv::Point2f>& corners, int size);
+    MarkerMatchResult recognize(const cv::Mat& gray, const std::vector<cv::Point2f>& corners) const;
+    bool matches(const cv::Mat& gray, const std::vector<cv::Point2f>& corners) const;
 };

@@ -1,18 +1,10 @@
 #pragma once
 
-#include <opencv2/core.hpp>
 #include <vector>
+#include <opencv2/core.hpp>
 
 class RotationEstimator {
 public:
-    // Restore the physical order of the marker corners.
-    bool correctCornerOrder(
-        std::vector<cv::Point2f>& corners,
-        int rotationIndex
-    ) const;
-
-    // Estimate the rotation angle in degrees.
-    double estimateRotation(
-        const std::vector<cv::Point2f>& corners
-    ) const;
+    bool correctCornerOrder(std::vector<cv::Point2f>& corners, int rotationIndex) const;
+    double estimateRotation(const std::vector<cv::Point2f>& corners) const;
 };

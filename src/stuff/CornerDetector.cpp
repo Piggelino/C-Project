@@ -8,73 +8,39 @@
 #include <opencv2/geometry.hpp>
 #endif
 
-bool orderCorners(const std::vector<cv::Point>& points, std::vector<cv::Point2f>& ordered) {
+bool orderCorners(
+    const std::vector<cv::Point>& points,
+    std::vector<cv::Point2f>& ordered
+) {
     ordered.clear();
-
-    if (points.size() != 4) {
-        return false;
-    }
+    if (points.size() != 4) return false;
 
     std::vector<cv::Point> hull;
     cv::convexHull(points, hull);
-
-    if (hull.size() != 4) {
-        return false;
-    }
+    if (hull.size() != 4) return false;
 
     cv::Point2f center(0, 0);
-
-    for (const auto& p : hull) {
-        ordered.emplace_back(p);
+    for (const auto& point : hull) {
+        ordered.emplace_back(point);
         center += ordered.back();
     }
-
     center *= 0.25f;
 
-    // Sort corners clockwise.
-    std::sort(
-        ordered.begin(),
-        ordered.end(),
-        [center](auto a, auto b) {
-            return std::atan2(
-                a.y - center.y,
-                a.x - center.x
-            ) < std::atan2(
-                b.y - center.y,
-                b.x - center.x
-            );
-        }
-    );
+    std::sort(ordered.begin(), ordered.end(), [center](auto a, auto b) {
+        return std::atan2(a.y - center.y, a.x - center.x) <
+               std::atan2(b.y - center.y, b.x - center.x);
+    });
 
-    // Ensure clockwise winding in image coordinates.
     if (cv::contourArea(ordered, true) < 0.0) {
-        std::reverse(
-            ordered.begin(),
-            ordered.end()
-        );
+        std::reverse(ordered.begin(), ordered.end());
     }
-    // Select a temporary geometric starting corner.
-    const auto first = std::min_element(
-        ordered.begin(),
-        ordered.end(),
-        [](auto a, auto b) {
-            float sa = a.x + a.y;
-            float sb = b.x + b.y;
 
-            if (sa == sb) {
-                return a.y < b.y;
-            } else {
-                return sa < sb;
-            }
-        }
-    );
-
-    std::rotate(
-        ordered.begin(),
-        first,
-        ordered.end()
-    );
-
+    const auto first = std::min_element(ordered.begin(), ordered.end(), [](auto a, auto b) {
+        const float sumA = a.x + a.y;
+        const float sumB = b.x + b.y;
+        return sumA == sumB ? a.y < b.y : sumA < sumB;
+    });
+    std::rotate(ordered.begin(), first, ordered.end());
     return true;
 }
 
@@ -83,65 +49,33 @@ std::vector<CornerCandidate> CornerDetector::detectCorners(
     const cv::Mat& thresh
 ) const {
     std::vector<CornerCandidate> candidates;
-
-    if (gray.empty() ||
-        thresh.empty() ||
-        gray.type() != CV_8UC1 ||
-        thresh.type() != CV_8UC1 ||
+    if (gray.empty() || thresh.empty() ||
+        gray.type() != CV_8UC1 || thresh.type() != CV_8UC1 ||
         gray.size() != thresh.size()) {
-
         return candidates;
     }
 
     std::vector<std::vector<cv::Point>> contours;
     std::vector<cv::Vec4i> hierarchy;
-
-    cv::findContours(
-        thresh,
-        contours,
-        hierarchy,
-        cv::RETR_TREE,
-        cv::CHAIN_APPROX_SIMPLE
-    );
+    cv::findContours(thresh, contours, hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
 
     for (std::size_t i = 0; i < contours.size(); ++i) {
-
-        // In the inverted binary image,
-        // odd-depth contours represent holes.
+        // Odd-depth contours are holes, not marker boundaries.
         int depth = 0;
-
-        for (int p = hierarchy[i][3];
-             p >= 0;
-             p = hierarchy[p][3]) {
-
+        for (int parent = hierarchy[i][3]; parent >= 0; parent = hierarchy[parent][3]) {
             ++depth;
         }
-
-        if (depth % 2 != 0) {
-            continue;
-        }
+        if (depth % 2 != 0) continue;
 
         const auto& contour = contours[i];
-
-        if (cv::contourArea(contour) < 500) {
-            continue;
-        }
+        if (cv::contourArea(contour) < 500) continue;
 
         std::vector<cv::Point> polygon;
-
-        // Try the original approximation first, then slightly different
-        // tolerances before falling back to the convex hull.
         const auto approximateSquare = [&polygon](const std::vector<cv::Point>& points) {
             const double perimeter = cv::arcLength(points, true);
-
             for (double epsilon : {0.02, 0.015, 0.03, 0.04}) {
-                cv::approxPolyDP(
-                    points, polygon, epsilon * perimeter, true
-                );
-
-                if (polygon.size() == 4 && cv::isContourConvex(polygon)) {
-                    return true;
-                }
+                cv::approxPolyDP(points, polygon, epsilon * perimeter, true);
+                if (polygon.size() == 4 && cv::isContourConvex(polygon)) return true;
             }
             return false;
         };
@@ -149,36 +83,22 @@ std::vector<CornerCandidate> CornerDetector::detectCorners(
         if (!approximateSquare(contour)) {
             std::vector<cv::Point> hull;
             cv::convexHull(contour, hull);
-
-            if (!approximateSquare(hull)) {
-                continue;
-            }
+            if (!approximateSquare(hull)) continue;
         }
 
         std::vector<cv::Point2f> corners;
-
-        if (!orderCorners(polygon, corners)) {
-            continue;
-        }
+        if (!orderCorners(polygon, corners)) continue;
 
         bool valid = true;
-
-        // Reject corners too close to the image border.
-        for (const auto& p : corners) {
-            if (p.x < 6 ||
-                p.y < 6 ||
-                p.x >= gray.cols - 6 ||
-                p.y >= gray.rows - 6) {
-
+        for (const auto& point : corners) {
+            if (point.x < 6 || point.y < 6 ||
+                point.x >= gray.cols - 6 || point.y >= gray.rows - 6) {
                 valid = false;
             }
         }
+        if (!valid) continue;
 
-        if (!valid) {
-            continue;
-        }
-
-        // Refine a copy so a bad refinement does not discard good corners.
+        // Keep the geometric corners if subpixel refinement is unreliable.
         auto refined = corners;
         cv::cornerSubPix(
             gray,
@@ -186,27 +106,27 @@ std::vector<CornerCandidate> CornerDetector::detectCorners(
             cv::Size(5, 5),
             cv::Size(-1, -1),
             cv::TermCriteria(
-                cv::TermCriteria::EPS |
-                cv::TermCriteria::MAX_ITER,
+                cv::TermCriteria::EPS | cv::TermCriteria::MAX_ITER,
                 40,
                 0.01
             )
         );
 
-        // Limit refinement displacement to preserve the corner correspondence.
         double shortestSide = cv::norm(corners[1] - corners[0]);
         for (int j = 0; j < 4; ++j) {
-            shortestSide = std::min(shortestSide,
-                cv::norm(corners[(j + 1) % 4] - corners[j]));
+            shortestSide = std::min(
+                shortestSide,
+                cv::norm(corners[(j + 1) % 4] - corners[j])
+            );
         }
         const double maxShift = std::min(5.0, shortestSide * 0.10);
 
         for (int j = 0; j < 4; ++j) {
-            const auto& p = refined[j];
-            if (!std::isfinite(p.x) || !std::isfinite(p.y) ||
-                p.x < 0 || p.y < 0 ||
-                p.x >= gray.cols || p.y >= gray.rows ||
-                cv::norm(p - corners[j]) > maxShift) {
+            const auto& point = refined[j];
+            if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+                point.x < 0 || point.y < 0 ||
+                point.x >= gray.cols || point.y >= gray.rows ||
+                cv::norm(point - corners[j]) > maxShift) {
                 valid = false;
                 break;
             }
@@ -216,12 +136,8 @@ std::vector<CornerCandidate> CornerDetector::detectCorners(
             cv::contourArea(refined, true) > 1.0) {
             corners = refined;
         }
-        // Otherwise retain the original four geometric corners.
 
-        candidates.push_back({
-            polygon,
-            corners
-        });
+        candidates.push_back({polygon, corners});
     }
 
     return candidates;
