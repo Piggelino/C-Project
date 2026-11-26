@@ -14,7 +14,12 @@
 #include <vector>
 
 CameraHandler::CameraHandler()
-    : mySource("resources/pipNoise.mp3") {
+    : soundSources{
+        AudioSource("resources/pipNoise.mp3"),
+        AudioSource("resources/pipNoise2.mp3"),
+        AudioSource("resources/pipNoise3.mp3"),
+        AudioSource("resources/pipNoise4.mp3")
+    } {
 }
 
 void CameraHandler::run() {
@@ -297,12 +302,19 @@ void CameraHandler::run() {
         }
 
         // Update sound only for valid markers.
-        if (markerDetected) {
+        if (markerDetected &&
+            best.rotationIndex >= 0 &&
+            best.rotationIndex <
+                static_cast<int>(soundSources.size())) {
+
+            const std::size_t soundIndex =
+                static_cast<std::size_t>(
+                    best.rotationIndex
+                );
 
             mySpeaker.updateFrequency(
-                mySource,
-                proximity,
-                rotation
+                soundSources[soundIndex],
+                proximity
             );
 
         } else {

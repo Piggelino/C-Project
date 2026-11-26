@@ -36,3 +36,9 @@ target_link_libraries(camera_grab PRIVATE ${OpenCV_LIBS})
 if(WIN32)
     target_link_libraries(camera_grab PRIVATE winmm)
 endif()
+
+add_custom_command(TARGET camera_grab POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+        "$<TARGET_FILE_DIR:camera_grab>/resources"
+)

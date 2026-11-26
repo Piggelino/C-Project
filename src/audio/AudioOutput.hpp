@@ -17,11 +17,5 @@ public:
         double proximity
     );
 
-    void updateFrequency(
-        const AudioSource& source,
-        double proximity,
-        double rotation
-    );
-
     void resetDetection();
 };

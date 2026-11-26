@@ -7,9 +7,11 @@
 #include "CornerDetector.hpp"
 #include "RotationEstimator.hpp"
 
+#include <array>
+
 class CameraHandler {
 private:
-    AudioSource mySource;
+    std::array<AudioSource, 4> soundSources;
     AudioOutput mySpeaker;
 
     DistanceEstimator distanceEstimator;

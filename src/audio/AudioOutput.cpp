@@ -4,6 +4,7 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -16,6 +17,31 @@ bool AudioOutput::playAudio(
 #if defined(_WIN32)
 
     static unsigned int audioId = 0;
+    static std::string activeFilePath;
+    static std::vector<std::string> activeAliases;
+
+    if (activeFilePath != filePath) {
+        for (const auto& alias : activeAliases) {
+            const std::string stopCommand = "stop " + alias;
+            const std::string closeCommand = "close " + alias;
+
+            mciSendStringA(
+                stopCommand.c_str(),
+                nullptr,
+                0,
+                nullptr
+            );
+            mciSendStringA(
+                closeCommand.c_str(),
+                nullptr,
+                0,
+                nullptr
+            );
+        }
+
+        activeAliases.clear();
+        activeFilePath = filePath;
+    }
 
     const std::string alias =
         "camera_audio_" + std::to_string(++audioId);
@@ -53,6 +79,8 @@ bool AudioOutput::playAudio(
         return false;
     }
 
+    activeAliases.push_back(alias);
+
     return true;
 
 #elif defined(__APPLE__)
@@ -71,22 +99,12 @@ bool AudioOutput::playAudio(
 #endif
 }
 
-// Support the previous interface.
+// Update sound based on distance.
 void AudioOutput::updateFrequency(
     const AudioSource& source,
     double proximity
 ) {
-    updateFrequency(source, proximity, 0.0);
-}
-
-// Update sound based on distance and rotation.
-void AudioOutput::updateFrequency(
-    const AudioSource& source,
-    double proximity,
-    double rotation
-) {
-    if (!std::isfinite(proximity) ||
-        !std::isfinite(rotation)) {
+    if (!std::isfinite(proximity)) {
         return;
     }
 
@@ -102,29 +120,10 @@ void AudioOutput::updateFrequency(
     constexpr int fastestInterval = 1;
 
     // Calculate the original distance-based interval.
-    const int distanceInterval = static_cast<int>(
+    const int framesToWait = static_cast<int>(
         slowestInterval -
         proximity *
         (slowestInterval - fastestInterval)
-    );
-
-    // Convert rotation to radians.
-    constexpr double PI = 3.14159265358979323846;
-
-    const double radians =
-        rotation * PI / 180.0;
-
-    // Rotation changes the interval by a factor of 1–2.
-    const double rotationFactor =
-        1.0 + 0.5 * (1.0 - std::cos(radians));
-
-    const int framesToWait = std::max(
-        1,
-        static_cast<int>(
-            std::lround(
-                distanceInterval * rotationFactor
-            )
-        )
     );
 
     if (frameCounter >= framesToWait) {
