@@ -1,24 +1,44 @@
 #pragma once
 
-#include <opencv2/opencv.hpp>
-#include <opencv2/imgproc.hpp>
-#include <vector>
+#include <array>
+#include <opencv2/core.hpp>
 #include <string>
+#include <vector>
 
+struct MarkerMatchResult {
+    bool matched = false;
+    int rotationIndex = -1;
+    double similarity = -1.0;
+
+    std::string id;
+
+    double margin = 0.0;
+
+    std::array<double, 4> scores = {
+        -1.0, -1.0, -1.0, -1.0
+    };
+
+    cv::Mat normalizedCandidate;
+
+    std::string reason = "Not evaluated";
+};
 
 class MarkerTemplateMatcher {
 private:
-    cv::Mat referencePattern;
     static constexpr int SIZE = 160;
 
-    // Normalize a marker image for comparison.
+    std::array<cv::Mat, 4> referencePatterns;
+
     static cv::Mat normalize(const cv::Mat& image);
+    static cv::Mat loadPattern(const std::string& path);
+    static cv::Mat extractInterior(const cv::Mat& image);
+    static bool hasBlackBorder(const cv::Mat& image);
+    static double compare(const cv::Mat& candidate, const cv::Mat& reference);
 
 public:
-    // Load the reference Hiro marker.
+    bool loadTemplates(const std::string& directory);
     bool loadTemplate(const std::string& path);
-
-    // Check whether a four-corner candidate matches Hiro.
-    bool matches(const cv::Mat& gray,
-                 const std::vector<cv::Point2f>& corners) const;
+    static cv::Mat rectify(const cv::Mat& image, const std::vector<cv::Point2f>& corners, int size);
+    MarkerMatchResult recognize(const cv::Mat& gray, const std::vector<cv::Point2f>& corners) const;
+    bool matches(const cv::Mat& gray, const std::vector<cv::Point2f>& corners) const;
 };

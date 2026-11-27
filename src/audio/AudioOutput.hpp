@@ -1,7 +1,8 @@
 #pragma once
 
-#include <string>
 #include "AudioSource.hpp"
+
+#include <string>
 
 class AudioOutput {
 private:
@@ -11,6 +12,5 @@ private:
 
 public:
     void updateFrequency(const AudioSource& source, double proximity);
-
     void resetDetection();
 };

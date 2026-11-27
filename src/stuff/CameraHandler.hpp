@@ -1,17 +1,23 @@
 #pragma once
 
-#include <opencv2/opencv.hpp>
-
+#include "AudioSource.hpp"
 #include "AudioOutput.hpp"
 #include "DistanceEstimator.hpp"
 #include "MarkerTemplateMatcher.hpp"
+#include "CornerDetector.hpp"
+#include "RotationEstimator.hpp"
+
+#include <array>
 
 class CameraHandler {
 private:
-    AudioSource mySource;
+    std::array<AudioSource, 4> soundSources;
     AudioOutput mySpeaker;
+
     DistanceEstimator distanceEstimator;
     MarkerTemplateMatcher markerMatcher;
+    CornerDetector cornerDetector;
+    RotationEstimator rotationEstimator;
 
 public:
     CameraHandler();
